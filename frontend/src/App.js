@@ -1,6 +1,6 @@
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { useState } from 'react';
-import { Bell, Activity, FileText } from 'lucide-react'; // Added icons
+import { Bell, Activity, FileText, User, ShieldCheck } from 'lucide-react';
 
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
@@ -10,14 +10,14 @@ import './App.css';
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [data, setData] = useState(null);
-  
-  // NEW: State to toggle between Raw (Dirty) and Cleaned (Filtered) signals
   const [showCleaned, setShowCleaned] = useState(false);
+  
+  // NEW: Dual Mode State
+  const [userMode, setUserMode] = useState('clinician'); 
 
   const handleAnalysisComplete = (newData) => {
     setData(newData);
     setActiveTab('dashboard');
-    // Reset to Raw view initially so user sees the "Before" state first
     setShowCleaned(false);
   };
 
@@ -40,51 +40,56 @@ function App() {
           {/* HEADER */}
           <header className="bg-white border-bottom py-3 px-4 d-flex justify-content-between align-items-center sticky-top shadow-sm">
             <div>
-              <h5 className="fw-bold mb-0 text-dark">Hello👋</h5>
+              <h5 className="fw-bold mb-0 text-dark">
+                {userMode === 'clinician' ? "Clinician Portal" : "Patient Wellness"} 👋
+              </h5>
               <small className="text-muted">
-                {data ? "Patient analysis ready" : "Waiting for file upload"}
+                {data ? "Analysis ready" : "Waiting for file upload"}
               </small>
             </div>
             
             <div className="d-flex align-items-center gap-4">
               
-              {/* NEW: THE MAGIC TOGGLE BUTTON */}
-              {/* Only visible when data is loaded and we are on the dashboard */}
-              {data && activeTab === 'dashboard' && (
+              {/* DUAL MODE TOGGLE */}
+              {data && (
+                <div className="btn-group bg-light p-1 rounded-3" role="group">
+                  <button 
+                    onClick={() => setUserMode('clinician')}
+                    className={`btn btn-sm d-flex align-items-center gap-2 px-3 ${userMode === 'clinician' ? 'btn-white shadow-sm fw-bold' : 'text-muted border-0'}`}
+                  >
+                    <ShieldCheck size={16} /> Clinician
+                  </button>
+                  <button 
+                    onClick={() => setUserMode('patient')}
+                    className={`btn btn-sm d-flex align-items-center gap-2 px-3 ${userMode === 'patient' ? 'btn-white shadow-sm fw-bold' : 'text-muted border-0'}`}
+                  >
+                    <User size={16} /> Patient
+                  </button>
+                </div>
+              )}
+
+              {/* SIGNAL TOGGLE (Only for Clinicians) */}
+              {data && activeTab === 'dashboard' && userMode === 'clinician' && (
                 <button
                   onClick={() => setShowCleaned(!showCleaned)}
                   className={`btn d-flex align-items-center gap-2 px-3 py-2 fw-bold transition-all ${
-                    showCleaned 
-                      ? "btn-outline-danger" 
-                      : "btn-primary shadow-sm"
+                    showCleaned ? "btn-outline-danger" : "btn-primary shadow-sm"
                   }`}
                   style={{ borderRadius: '10px' }}
                 >
-                  {showCleaned ? (
-                    <>
-                      <FileText size={18} />
-                      Show Raw Input
-                    </>
-                  ) : (
-                    <>
-                      <Activity size={18} />
-                      ✨ Clean Signal
-                    </>
-                  )}
+                  {showCleaned ? <><FileText size={18} /> Show Raw</> : <><Activity size={18} /> Clean Signal</>}
                 </button>
               )}
 
-              {/* NOTIFICATION BELL */}
               <div className="position-relative cursor-pointer">
                 <Bell size={20} className="text-secondary"/>
                 <span className="position-absolute top-0 start-100 translate-middle p-1 bg-danger border border-light rounded-circle"></span>
               </div>
               
-              {/* USER PROFILE */}
               <div className="d-flex align-items-center gap-3 ps-3 border-start">
                 <div className="text-end d-none d-md-block">
-                    <div className="fw-bold small">Subject</div>
-                    <div className="text-muted" style={{fontSize: '0.75rem'}}>Patient</div>
+                    <div className="fw-bold small">SJ</div>
+                    <div className="text-muted" style={{fontSize: '0.75rem'}}>Subject</div>
                 </div>
                 <div className="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center fw-bold shadow-sm" style={{width: 40, height: 40}}>SJ</div>
               </div>
@@ -94,19 +99,15 @@ function App() {
           {/* CONTENT BODY */}
           <div className="flex-grow-1 p-4 overflow-auto scroll-smooth bg-light">
             <div className="container-fluid p-0" style={{maxWidth: '1600px'}}>
-              
               {activeTab === 'dashboard' && (
                 <Dashboard 
                   data={data}
                   onAnalysisComplete={handleAnalysisComplete}
-                  showCleaned={showCleaned} // Pass the toggle state down!
+                  showCleaned={showCleaned}
+                  userMode={userMode} // Pass the mode down
                 />
               )}
-
-              {activeTab === 'results' && (
-                <TestResults data={data} />
-              )}
-
+              {activeTab === 'results' && <TestResults data={data} />}
             </div>
           </div>
         </div>
@@ -119,7 +120,7 @@ export default App;
 
 // import 'bootstrap/dist/css/bootstrap.min.css';
 // import { useState } from 'react';
-// import { Bell } from 'lucide-react';
+// import { Bell, Activity, FileText } from 'lucide-react'; // Added icons
 
 // import Sidebar from './components/Sidebar';
 // import Dashboard from './components/Dashboard';
@@ -129,16 +130,22 @@ export default App;
 // function App() {
 //   const [activeTab, setActiveTab] = useState('dashboard');
 //   const [data, setData] = useState(null);
+  
+//   // NEW: State to toggle between Raw (Dirty) and Cleaned (Filtered) signals
+//   const [showCleaned, setShowCleaned] = useState(false);
 
 //   const handleAnalysisComplete = (newData) => {
 //     setData(newData);
-//     setActiveTab('dashboard'); 
+//     setActiveTab('dashboard');
+//     // Reset to Raw view initially so user sees the "Before" state first
+//     setShowCleaned(false);
 //   };
 
 //   return (
 //     <div className="container-fluid min-vh-100 bg-light">
 //       <div className="row min-vh-100 flex-nowrap">
         
+//         {/* SIDEBAR */}
 //         <div className="col-auto p-0 border-end" style={{ width: '280px', minWidth: '280px' }}>
 //           <Sidebar 
 //             activeTab={activeTab} 
@@ -147,9 +154,11 @@ export default App;
 //           />
 //         </div>
 
+//         {/* MAIN CONTENT AREA */}
 //         <div className="col p-0 d-flex flex-column h-100 overflow-hidden">
           
-//           <header className="bg-white border-bottom py-3 px-4 d-flex justify-content-between align-items-center">
+//           {/* HEADER */}
+//           <header className="bg-white border-bottom py-3 px-4 d-flex justify-content-between align-items-center sticky-top shadow-sm">
 //             <div>
 //               <h5 className="fw-bold mb-0 text-dark">Hello👋</h5>
 //               <small className="text-muted">
@@ -158,10 +167,40 @@ export default App;
 //             </div>
             
 //             <div className="d-flex align-items-center gap-4">
+              
+//               {/* NEW: THE MAGIC TOGGLE BUTTON */}
+//               {/* Only visible when data is loaded and we are on the dashboard */}
+//               {data && activeTab === 'dashboard' && (
+//                 <button
+//                   onClick={() => setShowCleaned(!showCleaned)}
+//                   className={`btn d-flex align-items-center gap-2 px-3 py-2 fw-bold transition-all ${
+//                     showCleaned 
+//                       ? "btn-outline-danger" 
+//                       : "btn-primary shadow-sm"
+//                   }`}
+//                   style={{ borderRadius: '10px' }}
+//                 >
+//                   {showCleaned ? (
+//                     <>
+//                       <FileText size={18} />
+//                       Show Raw Input
+//                     </>
+//                   ) : (
+//                     <>
+//                       <Activity size={18} />
+//                       Clean Signal
+//                     </>
+//                   )}
+//                 </button>
+//               )}
+
+//               {/* NOTIFICATION BELL */}
 //               <div className="position-relative cursor-pointer">
 //                 <Bell size={20} className="text-secondary"/>
 //                 <span className="position-absolute top-0 start-100 translate-middle p-1 bg-danger border border-light rounded-circle"></span>
 //               </div>
+              
+//               {/* USER PROFILE */}
 //               <div className="d-flex align-items-center gap-3 ps-3 border-start">
 //                 <div className="text-end d-none d-md-block">
 //                     <div className="fw-bold small">Subject</div>
@@ -172,13 +211,15 @@ export default App;
 //             </div>
 //           </header>
 
-//           <div className="flex-grow-1 p-4 overflow-auto scroll-smooth">
+//           {/* CONTENT BODY */}
+//           <div className="flex-grow-1 p-4 overflow-auto scroll-smooth bg-light">
 //             <div className="container-fluid p-0" style={{maxWidth: '1600px'}}>
               
 //               {activeTab === 'dashboard' && (
 //                 <Dashboard 
 //                   data={data}
 //                   onAnalysisComplete={handleAnalysisComplete}
+//                   showCleaned={showCleaned} // Pass the toggle state down!
 //                 />
 //               )}
 
@@ -195,3 +236,4 @@ export default App;
 // }
 
 // export default App;
+
