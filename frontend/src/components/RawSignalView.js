@@ -1,149 +1,87 @@
 import React from 'react';
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
-const RawSignalView = ({ data, stats }) => {
-  // If no data is passed, show a loading state
-  if (!data || !stats) return <div className="text-gray-500">Waiting for data stream...</div>;
+const RawSignalView = ({ data, stats, features }) => {
+  if (!data || data.length === 0) return <div className="p-4 text-center">Loading Raw Monitor...</div>;
+
+  const channels = Object.keys(data[0]).filter(key => key !== 'time');
+
+  const getChannelColor = (ch) => {
+    const colors = { T7: "#3b82f6", F8: "#10b981", Cz: "#ef4444", P4: "#f59e0b" };
+    return colors[ch] || "#6b7280";
+  };
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      
-      {/* SECTION 1: THE DIAGNOSTIC STATS PANEL */}
-      {/* This visually proves to the teacher that the signal is "dirty" */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        
-        {/* Card 1: DC Offset (Drift) */}
-        <div className="bg-gray-800 p-4 rounded-xl border-l-4 border-red-500 shadow-lg">
-          <h3 className="text-gray-400 text-xs uppercase font-bold tracking-wider">DC Offset (Drift)</h3>
-          <div className="mt-2 flex items-baseline">
-            <span className="text-2xl font-mono text-red-400 font-bold">
-              {stats.T7_Offset.toFixed(1)}
-            </span>
-            <span className="ml-1 text-xs text-gray-500">µV</span>
-          </div>
-          <p className="text-xs text-red-300 mt-1">⚠ Hardware Baseline Drift</p>
-        </div>
-
-        {/* Card 2: Noise Level */}
-        <div className="bg-gray-800 p-4 rounded-xl border-l-4 border-orange-500 shadow-lg">
-          <h3 className="text-gray-400 text-xs uppercase font-bold tracking-wider">Noise Floor</h3>
-          <div className="mt-2 flex items-baseline">
-            <span className="text-2xl font-mono text-orange-400 font-bold">
-              High
-            </span>
-          </div>
-          <p className="text-xs text-orange-300 mt-1">⚡ 50Hz Mains Hum Detected</p>
-        </div>
-
-        {/* Card 3: Artifacts */}
-        <div className="bg-gray-800 p-4 rounded-xl border-l-4 border-yellow-500 shadow-lg">
-          <h3 className="text-gray-400 text-xs uppercase font-bold tracking-wider">Artifacts</h3>
-          <div className="mt-2">
-             <span className="text-lg font-mono text-yellow-100 bg-yellow-900 px-2 py-1 rounded">
-               Blinks / Jaw
-             </span>
-          </div>
-          <p className="text-xs text-gray-400 mt-2">Found on F7 & T8</p>
-        </div>
-
-        {/* Card 4: System Status */}
-        <div className="bg-gray-800 p-4 rounded-xl border border-gray-700 flex flex-col justify-center items-center">
-          <div className="h-3 w-3 rounded-full bg-red-500 animate-pulse mb-2"></div>
-          <span className="text-red-400 font-bold text-sm">RAW INPUT UNSTABLE</span>
-          <span className="text-gray-500 text-xs text-center mt-1">Filters Required</span>
+    <div className="row g-4">
+      {/* SECTION 1: GLOBAL STAT CARD */}
+      <div className="col-md-6">
+        <div className="card border-0 shadow-sm rounded-4 p-3 bg-light text-dark border-start border-4 border-primary">
+          <h6 className="text-muted small fw-bold mb-1">DATA SOURCE</h6>
+          <h5 className="fw-bold mb-0 text-truncate">{stats?.File || "Active Stream"}</h5>
         </div>
       </div>
 
-      {/* SECTION 2: THE GRAPHS */}
-      
-      {/* Graph A: The "Active" Channels (T7 & F8) showing the Drift */}
-      <div className="bg-gray-800 p-4 rounded-xl border border-gray-700">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="font-semibold text-gray-200">
-            Raw Input: Active Channels (T7, F8)
-          </h3>
-          <span className="text-xs bg-red-900 text-red-200 px-2 py-1 rounded border border-red-700">
-            Unfiltered (Floating Baseline)
-          </span>
+      {/* SECTION 2: SEPARATE INDEPENDENT GRAPHS */}
+      <div className="col-12">
+        <div className="d-flex flex-column gap-3">
+          {channels.map((ch) => (
+            <div key={ch} className="card border-0 shadow-sm rounded-4 p-3 bg-white">
+              <div className="d-flex justify-content-between align-items-start mb-2">
+                <div>
+                  <span className="badge rounded-pill px-3" style={{backgroundColor: getChannelColor(ch)}}>
+                    CHANNEL: {ch}
+                  </span>
+                  <p className="text-muted small mb-0 mt-1" style={{fontSize: '0.7rem'}}>Unfiltered Hardware Voltage</p>
+                </div>
+
+                {/* DYNAMIC STATS FOR THIS SPECIFIC CHANNEL */}
+                <div className="d-flex gap-3 text-end font-monospace" style={{fontSize: '0.75rem'}}>
+                  <div>
+                    <span className="text-muted d-block">MEAN</span>
+                    <span className="fw-bold">{features?.[`${ch}_Mean`]?.toFixed(3) || "0.000"}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted d-block">STD DEV</span>
+                    <span className="fw-bold text-primary">{features?.[`${ch}_Std`]?.toFixed(3) || "0.000"}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted d-block">MIN/MAX</span>
+                    <span className="fw-bold text-danger">
+                       {features?.[`${ch}_Min`]?.toFixed(1) || "0"}/{features?.[`${ch}_Max`]?.toFixed(1) || "0"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ width: '100%', height: 160 }}>
+                <ResponsiveContainer>
+                  <AreaChart data={data}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                    <XAxis dataKey="time" hide />
+                    <YAxis domain={['auto', 'auto']} tick={{fontSize: 9}} width={35} />
+                    <Tooltip 
+                      contentStyle={{borderRadius: '8px', border: 'none', fontSize: '12px'}}
+                      labelStyle={{display: 'none'}}
+                    />
+                    <Area 
+                      type="monotone" 
+                      dataKey={ch} 
+                      stroke={getChannelColor(ch)} 
+                      fill={getChannelColor(ch)} 
+                      fillOpacity={0.05} 
+                      strokeWidth={1.5}
+                      isAnimationActive={false} 
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          ))}
         </div>
-        
-        <ResponsiveContainer width="100%" height={250}>
-          <AreaChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.5} />
-            <XAxis dataKey="time" hide />
-            {/* Auto-scale Y axis to show the massive drift offset */}
-            <YAxis domain={['auto', 'auto']} tick={{fill: '#9ca3af', fontSize: 10}} />
-            <Tooltip 
-              contentStyle={{backgroundColor: '#1f2937', borderColor: '#374151', color: '#f3f4f6'}}
-              itemStyle={{color: '#e5e7eb'}}
-            />
-            <Legend wrapperStyle={{paddingTop: '10px'}}/>
-            
-            {/* T7 (Left) - Drifting */}
-            <Area 
-              type="monotone" 
-              dataKey="T7" 
-              stroke="#60a5fa" 
-              fill="#3b82f6" 
-              fillOpacity={0.1} 
-              strokeWidth={2}
-              name="T7 (Left Temporal) - Raw" 
-              isAnimationActive={false}
-            />
-            {/* F8 (Right) - Drifting */}
-            <Area 
-              type="monotone" 
-              dataKey="F8" 
-              stroke="#34d399" 
-              fill="#10b981" 
-              fillOpacity={0.1} 
-              strokeWidth={2}
-              name="F8 (Right Frontal) - Raw" 
-              isAnimationActive={false}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
       </div>
-
-      {/* Graph B: The "Rejected" Channels (Cz & P4) */}
-      <div className="bg-gray-800 p-4 rounded-xl border border-gray-700 opacity-80 hover:opacity-100 transition-opacity">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="font-semibold text-gray-400">
-            Raw Input: Rejected Channels (Cz, P4)
-          </h3>
-          <span className="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded">
-            Noise / Artifact Sources
-          </span>
-        </div>
-
-        <ResponsiveContainer width="100%" height={200}>
-          <AreaChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.3} />
-            <XAxis dataKey="time" hide />
-            <YAxis domain={['auto', 'auto']} tick={{fill: '#6b7280', fontSize: 10}} />
-            <Tooltip contentStyle={{backgroundColor: '#1f2937', border: 'none'}} />
-            <Legend />
-            
-            <Area 
-              type="monotone" 
-              dataKey="Cz"  
-              stroke="#ef4444" 
-              fill="#ef4444" 
-              name="Cz (Hair Noise)" 
-            />
-            <Area 
-              type="monotone" 
-              dataKey="P4"  
-              stroke="#f59e0b" 
-              fill="#f59e0b" 
-              name="P4 (Hair Noise)" 
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
-
     </div>
   );
 };
 
 export default RawSignalView;
+

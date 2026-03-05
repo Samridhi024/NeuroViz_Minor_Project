@@ -2,17 +2,17 @@ from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 import numpy as np
-from scipy.signal import butter, iirnotch, filtfilt, welch
-import pywt 
+from scipy.signal import butter, iirnotch, filtfilt, welch, detrend
 import io
 import traceback
+import mne 
+import os
+import tempfile
 
-# Sampling Frequency (Hz)
-FS = 200.0  
+DEFAULT_FS = 200.0  
 
 app = FastAPI()
 
-# CORS for frontend access
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -21,387 +21,103 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 1. SIGNAL CLEANING (Updated with Zero-Mean and Robust Scaling)
-def clean_signal_data(data_dict):
-    """
-    Applies Digital Signal Processing (DSP) to remove noise and equalize channels.
-    1. Notch Filter (50Hz): Removes power line hum.
-    2. Bandpass Filter (0.5-50Hz): Isolates brainwaves.
-    3. Mean Centering: Forces signal to baseline 0.
-    4. Z-Score Normalization: Equalizes amplitude deviations.
-    """
-    b_notch, a_notch = iirnotch(50.0, 30.0, fs=FS)
-    
-    nyquist = 0.5 * FS
-    # Using 45Hz as high-cut to stay safely away from the 50Hz noise floor
+def clean_signal_data(data_dict, sampling_rate):
+    nyquist = 0.5 * sampling_rate
+    b_notch, a_notch = iirnotch(50.0, 30.0, fs=sampling_rate)
     b_band, a_band = butter(4, [0.5/nyquist, 45.0/nyquist], btype='band')
     
     clean_dict = {}
-    
     for channel, raw_signal in data_dict.items():
         try:
-            # Handle NaN and Infinity
-            signal_np = np.nan_to_num(raw_signal, nan=0.0, posinf=0.0, neginf=0.0)
-
-            # Step A: Apply Notch and Bandpass
-            filtered = filtfilt(b_notch, a_notch, signal_np)
-            bandpassed = filtfilt(b_band, a_band, filtered)
+            if raw_signal.size == 0:
+                clean_dict[channel] = np.array([])
+                continue
             
-            # Step B: FIX DEVIATION - Mean Centering (Zero-Baseline)
-            centered_signal = bandpassed - np.mean(bandpassed)
-
-            # Step C: FIX SCALE - Z-Score Normalization
-            # This ensures T7 and F8 are visually comparable on the same Y-axis
-            std_dev = np.std(centered_signal)
-            if std_dev > 1e-6: # Avoid division by zero
-                final_signal = centered_signal / std_dev
-            else:
-                final_signal = centered_signal
-
-            clean_dict[channel] = final_signal
+            sig = np.nan_to_num(raw_signal, nan=0.0)
+            sig = detrend(sig)
+            sig = filtfilt(b_notch, a_notch, sig)
+            sig = filtfilt(b_band, a_band, sig)
             
-        except Exception as e:
-            print(f"Skipping {channel} due to filter error: {e}")
+            # Robust Normalization
+            std_val = np.std(sig)
+            clean_dict[channel] = (sig - np.mean(sig)) / std_val if std_val > 1e-6 else sig - np.mean(sig)
+        except:
             clean_dict[channel] = raw_signal 
-            
     return clean_dict
 
-# 2. FEATURE EXTRACTION 
-def extract_all_features(clean_dict):
+def extract_all_features(clean_dict, sampling_rate):
     features = {}
-    spectrum_data = [] 
-    
-    target_channels = ['T7', 'F8']
-
-    for channel in target_channels:
-        if channel not in clean_dict: continue
+    for ch, sig in clean_dict.items():
+        if sig.size == 0: continue
+            
+        # Full Statistical Suite
+        features[f'{ch}_Mean'] = float(np.mean(sig))
+        features[f'{ch}_Min'] = float(np.min(sig))
+        features[f'{ch}_Max'] = float(np.max(sig))
+        features[f'{ch}_Std'] = float(np.std(sig))
         
-        signal = clean_dict[channel]
-        signal = np.nan_to_num(signal, nan=0.0, posinf=0.0, neginf=0.0)
+        # Frequency Features
+        freqs, psd = welch(sig, fs=sampling_rate, nperseg=min(len(sig), int(sampling_rate * 2)))
+        valid = (freqs >= 0.5) & (freqs <= 45)
+        features[f'{ch}_DominantFreq'] = float(freqs[valid][np.argmax(psd[valid])])
         
-        # A. STATISTICAL FEATURES
-        features[f'{channel}_Mean'] = float(np.mean(signal))
-        features[f'{channel}_Std'] = float(np.std(signal)) 
-        features[f'{channel}_Max'] = float(np.max(signal))
-        features[f'{channel}_Min'] = float(np.min(signal))
+        alpha_idx = (freqs >= 8) & (freqs <= 12)
+        features[f'{ch}_Alpha'] = float(np.trapz(psd[alpha_idx], freqs[alpha_idx]))
 
-        # B. POWER SPECTRAL DENSITY (PSD)
-        freqs, psd = welch(signal, fs=FS, nperseg=int(FS*2))
-        
-        # Dominant Frequency
-        peak_idx = np.argmax(psd)
-        dominant_freq = freqs[peak_idx]
-        features[f'{channel}_DominantFreq'] = float(dominant_freq)
+    # Asymmetry calculation
+    r_a = features.get('F8_Alpha', 1e-10)
+    l_a = features.get('T7_Alpha', 1e-10)
+    features['Alpha_Asymmetry'] = float(np.log(max(r_a, 1e-10)) - np.log(max(l_a, 1e-10)))
+    return features
 
-        # C. BAND POWERS
-        bands = {'Delta': (0.5, 4), 'Theta': (4, 8), 'Alpha': (8, 12), 'Beta': (12, 30), 'Gamma': (30, 40)}
-        for band_name, (low, high) in bands.items():
-            idx = np.logical_and(freqs >= low, freqs <= high)
-            features[f'{channel}_{band_name}'] = float(np.trapz(psd[idx], freqs[idx]))
-
-        # D. WAVELET ENERGY
-        try:
-            coeffs = pywt.wavedec(signal, 'db4', level=4)
-            energy = sum([np.sum(np.square(c)) for c in coeffs])
-            features[f'{channel}_WaveletEnergy'] = float(energy)
-        except:
-            features[f'{channel}_WaveletEnergy'] = 0.0
-
-    # SPECTRUM DATA FOR VISUALIZATION
-    if 'T7' in clean_dict and 'F8' in clean_dict:
-        f_t7, psd_t7 = welch(clean_dict['T7'], fs=FS, nperseg=int(FS*2))
-        _, psd_f8 = welch(clean_dict['F8'], fs=FS, nperseg=int(FS*2))
-        
-        limit = 40 
-        for i in range(len(f_t7)):
-            if f_t7[i] > limit: break
-            spectrum_data.append({
-                "frequency": float(f_t7[i]),
-                "T7": float(psd_t7[i]),
-                "F8": float(psd_f8[i])
-            })
-
-    # ALPHA ASYMMETRY SCORE
-    right = features.get('F8_Alpha', 1e-10)
-    left = features.get('T7_Alpha', 1e-10)
-    features['Alpha_Asymmetry'] = float(np.log(max(right, 1e-10)) - np.log(max(left, 1e-10)))
-    
-    return features, spectrum_data
-
-# 3. API ENDPOINT 
 @app.post("/analyze")
 async def analyze_eeg(file: UploadFile = File(...)):
+    tmp_path = None
     try:
+        filename = file.filename.lower()
         contents = await file.read()
-        
-        # 1. READ FILE
-        try:
-            df = pd.read_csv(io.BytesIO(contents), header=None, sep=',', usecols=[0,1,2,3,4])
-        except:
-            df = pd.read_csv(io.BytesIO(contents), header=None, sep=r'\s+', usecols=[0,1,2,3,4])
+        data_dict = {}
+        current_fs = DEFAULT_FS
 
-        df = df.apply(pd.to_numeric, errors='coerce').dropna()
-        
-        data_dict = {
-            'T7': df.iloc[:, 1].values,
-            'F8': df.iloc[:, 2].values,
-            'Cz': df.iloc[:, 3].values,
-            'P4': df.iloc[:, 4].values
-        }
-        
-        # 2. RAW STATS
-        raw_stats = {
-            "T7_Offset": float(np.mean(data_dict['T7'])),
-            "T7_Noise": float(np.std(data_dict['T7'])),
-            "Status": "STABLE"
-        }
+        if filename.endswith(".edf"):
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".edf") as tmp:
+                tmp.write(contents)
+                tmp_path = tmp.name
+            raw = mne.io.read_raw_edf(tmp_path, preload=True, verbose=False)
+            current_fs = raw.info['sfreq']
+            mapping = {'T7': ['EEG T3', 'EEG T7'], 'F8': ['EEG T4', 'EEG F8'], 'Cz': ['EEG Cz'], 'P4': ['EEG P4']}
+            for target, aliases in mapping.items():
+                match = [c for c in raw.ch_names if any(a in c for a in aliases)]
+                data_dict[target] = raw.get_data(picks=[match[0]])[0] if match else np.zeros(len(raw))
+        else:
+            try:
+                df = pd.read_csv(io.BytesIO(contents), sep=None, engine='python')
+            except:
+                df = pd.read_csv(io.BytesIO(contents), sep=r'\s+')
+            for target, idx in {'T7': 1, 'F8': 2, 'Cz': 3, 'P4': 4}.items():
+                match = [c for c in df.columns if target in str(c) or str(idx) in str(c)]
+                data_dict[target] = pd.to_numeric(df[match[0]] if match else df.iloc[:, idx], errors='coerce').fillna(0).values
 
-        # 3. PREPARE GRAPH DATA
-        raw_graph = []
+        clean_dict = clean_signal_data(data_dict, current_fs)
+        feats = extract_all_features(clean_dict, current_fs)
+        
         length = len(data_dict['T7'])
-        timestamps = np.arange(length) / FS
-        downsample = 10 
-        
+        downsample = max(1, length // 600)
+        raw_graph = []
         for i in range(0, length, downsample):
-            raw_graph.append({
-                "time": float(timestamps[i]),
-                "T7": float(data_dict["T7"][i]),
-                "F8": float(data_dict["F8"][i]),
-                "Cz": float(data_dict["Cz"][i]),
-                "P4": float(data_dict["P4"][i])
-            })
-
-        # 4. PROCESSING
-        clean_dict = clean_signal_data(data_dict)
-        feats, spectrum_data = extract_all_features(clean_dict)
-        
-        clean_graph = []
-        for i in range(0, length, downsample):
-            clean_graph.append({
-                "time": float(timestamps[i]),
-                "T7": float(clean_dict["T7"][i]),
-                "F8": float(clean_dict["F8"][i])
-            })
+            point = {"time": round(i/current_fs, 2)}
+            for ch in data_dict.keys(): point[ch] = float(data_dict[ch][i])
+            raw_graph.append(point)
 
         return {
-            "raw_graph": raw_graph,     
-            "clean_graph": clean_graph, 
-            "raw_stats": raw_stats,    
-            "features": feats,
-            "spectrum_data": spectrum_data,
+            "raw_graph": raw_graph, 
+            "clean_graph": [{"time": round(i/current_fs, 2), "T7": float(clean_dict["T7"][i]), "F8": float(clean_dict["F8"][i])} for i in range(0, length, downsample)],
+            "features": feats, 
             "asymmetry_score": feats.get('Alpha_Asymmetry', 0),
-            "duration": len(df)/FS
+            "raw_stats": {"T7_Offset": float(np.mean(data_dict['T7'])), "File": filename}
         }
-
     except Exception as e:
         traceback.print_exc()
         return {"error": str(e)}
-
-# from fastapi import FastAPI, UploadFile, File
-# from fastapi.middleware.cors import CORSMiddleware
-# import pandas as pd
-# import numpy as np
-# from scipy.signal import butter, iirnotch, filtfilt, welch
-# import pywt 
-# import io
-# import traceback
-
-# # Sampling Frequency (Hz)
-# FS = 200.0  
-
-# app = FastAPI()
-
-# # CORS for frontend access
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origins=["*"], 
-#     allow_credentials=True,
-#     allow_methods=["*"],
-#     allow_headers=["*"],
-# )
-
-# # 1. SIGNAL CLEANING 
-# def clean_signal_data(data_dict):
-#     """
-#     Applies Digital Signal Processing (DSP) to remove noise.
-#     1. Notch Filter (50Hz): Removes power line hum.
-#     2. Bandpass Filter (0.5-50Hz): Isolates brainwaves.
-#     """
-#     b_notch, a_notch = iirnotch(50.0, 30.0, fs=FS)
-    
-#     nyquist = 0.5 * FS
-#     b_band, a_band = butter(4, [0.5/nyquist, 50.0/nyquist], btype='band')
-    
-#     clean_dict = {}
-    
-#     for channel, raw_signal in data_dict.items():
-#         try:
-#             raw_signal = np.nan_to_num(raw_signal, nan=0.0, posinf=0.0, neginf=0.0)
-
-#             # Filters
-#             filtered = filtfilt(b_notch, a_notch, raw_signal)
-#             clean_signal = filtfilt(b_band, a_band, filtered)
-            
-#             clean_dict[channel] = clean_signal
-#         except Exception as e:
-#             print(f"Skipping {channel} due to filter error: {e}")
-#             clean_dict[channel] = raw_signal 
-            
-#     return clean_dict
-
-# # 2. FEATURE EXTRACTION 
-# def extract_all_features(clean_dict):
-#     features = {}
-#     spectrum_data = [] 
-    
-#     target_channels = ['T7', 'F8']
-
-#     for channel in target_channels:
-#         if channel not in clean_dict: continue
-        
-#         signal = clean_dict[channel]
-        
-#         signal = np.nan_to_num(signal, nan=0.0, posinf=0.0, neginf=0.0)
-        
-#         # A. STATISTICAL FEATURES
-#         features[f'{channel}_Mean'] = float(np.mean(signal))
-#         features[f'{channel}_Std'] = float(np.std(signal)) 
-#         features[f'{channel}_Max'] = float(np.max(signal))
-#         features[f'{channel}_Min'] = float(np.min(signal))
-
-#         # B. POWER SPECTRAL DENSITY (PSD)
-#         # welch() to compute the power at each frequency
-#         freqs, psd = welch(signal, fs=FS, nperseg=int(FS*2))
-        
-#         # Dominant Frequency
-#         peak_idx = np.argmax(psd)
-#         dominant_freq = freqs[peak_idx]
-#         features[f'{channel}_DominantFreq'] = float(dominant_freq)
-
-#         # C. BAND POWERS (Area Under Curve)
-#         bands = {'Delta': (0.5, 4), 'Theta': (4, 8), 'Alpha': (8, 12), 'Beta': (12, 30), 'Gamma': (30, 40)}
-#         for band_name, (low, high) in bands.items():
-#             idx = np.logical_and(freqs >= low, freqs <= high)
-#             features[f'{channel}_{band_name}'] = float(np.trapz(psd[idx], freqs[idx]))
-
-#         # D. WAVELET ENERGY
-#         try:
-#             coeffs = pywt.wavedec(signal, 'db4', level=4)
-#             energy = sum([np.sum(np.square(c)) for c in coeffs])
-#             features[f'{channel}_WaveletEnergy'] = float(energy)
-#         except:
-#             features[f'{channel}_WaveletEnergy'] = 0.0
-
-#     # GENERATING SPECTRUM DATA (For the Frequency Graph)
-#     if 'T7' in clean_dict and 'F8' in clean_dict:
-#         s_t7 = np.nan_to_num(clean_dict['T7'])
-#         s_f8 = np.nan_to_num(clean_dict['F8'])
-        
-#         f_t7, psd_t7 = welch(s_t7, fs=FS, nperseg=int(FS*2))
-#         f_f8, psd_f8 = welch(s_f8, fs=FS, nperseg=int(FS*2))
-        
-#         limit = 40 # Graph limit = 40Hz (Relevant brainwaves)
-#         for i in range(len(f_t7)):
-#             if f_t7[i] > limit: break
-#             spectrum_data.append({
-#                 "frequency": float(f_t7[i]),
-#                 "T7": float(psd_t7[i]),
-#                 "F8": float(psd_f8[i])
-#             })
-
-#     # CALCULATE ALPHA ASYMMETRY SCORE
-#     # Formula: ln(Right Alpha) - ln(Left Alpha)
-#     # Using small epsilon (1e-10) to avoid Log(0) error
-#     right = features.get('F8_Alpha', 1e-10)
-#     left = features.get('T7_Alpha', 1e-10)
-    
-#     # Handle NaN in features if extraction failed
-#     if np.isnan(right): right = 1e-10
-#     if np.isnan(left): left = 1e-10
-    
-#     features['Alpha_Asymmetry'] = float(np.log(right + 1e-10) - np.log(left + 1e-10))
-    
-#     return features, spectrum_data
-
-# # 3. API ENDPOINT 
-# @app.post("/analyze")
-# async def analyze_eeg(file: UploadFile = File(...)):
-#     print(f"📥 Received file: {file.filename}")
-#     try:
-#         contents = await file.read()
-        
-#         # 1. READ FILE (Handle comma or space separation)
-#         try:
-#             df = pd.read_csv(io.BytesIO(contents), header=None, sep=',', usecols=[0,1,2,3,4])
-#             if df.shape[1] < 5: raise ValueError
-#         except:
-#             # Fallback for space-separated files
-#             df = pd.read_csv(io.BytesIO(contents), header=None, sep=r'\s+', usecols=[0,1,2,3,4])
-
-#         # Converting to numeric, force errors to NaN, drop empty rows
-#         df = df.apply(pd.to_numeric, errors='coerce').dropna()
-        
-#         # 2. MAP COLUMNS (PhysioNet Dataset Standard)
-#         data_dict = {}
-#         # Col 0 is Index/Time
-#         if df.shape[1] >= 5:
-#             # USED CHANNELS (Hairless / Low Impedance)
-#             data_dict['T7'] = df.iloc[:, 1].values 
-#             data_dict['F8'] = df.iloc[:, 2].values 
-            
-#             # REJECTED CHANNELS (Hair / High Impedance)
-#             data_dict['Cz'] = df.iloc[:, 3].values # Vertex (Top of head hair region)
-#             data_dict['P4'] = df.iloc[:, 4].values # Parietal (Back right also the hair region)
-        
-#         # 3. CALCULATE RAW STATS 
-#         raw_stats = {
-#             "T7_Offset": float(np.mean(data_dict['T7'])),
-#             "T7_Noise": float(np.std(data_dict['T7'])),
-#             "Status": "HIGH IMPEDANCE (Cz/P4)"
-#         }
-
-#         # 4. PREPARING RAW GRAPH DATA (Downsampled for speed)
-#         raw_graph = []
-#         length = len(data_dict['T7'])
-#         timestamps = np.arange(length) / FS
-#         downsample = 10 
-        
-#         for i in range(0, length, downsample):
-#             raw_graph.append({
-#                 "time": float(timestamps[i]),
-#                 "T7": float(data_dict["T7"][i]),
-#                 "F8": float(data_dict["F8"][i]),
-#                 "Cz": float(data_dict["Cz"][i]), # noise
-#                 "P4": float(data_dict["P4"][i])  # noise
-#             })
-
-#         # 5. PROCESSING DATA
-#         clean_dict = clean_signal_data(data_dict)
-#         feats, spectrum_data = extract_all_features(clean_dict)
-        
-#         # 6. PREPARING CLEAN GRAPH DATA
-#         clean_graph = []
-#         for i in range(0, length, downsample):
-#             clean_graph.append({
-#                 "time": float(timestamps[i]),
-#                 "T7": float(clean_dict["T7"][i]),
-#                 "F8": float(clean_dict["F8"][i]),
-#                 "Cz": 0, 
-#                 "P4": 0 
-#             })
-
-#         # 7. JSON RESPONSE
-#         return {
-#             "raw_graph": raw_graph,     
-#             "clean_graph": clean_graph, 
-#             "raw_stats": raw_stats,    
-#             "features": feats,
-#             "spectrum_data": spectrum_data,
-#             "asymmetry_score": feats.get('Alpha_Asymmetry', 0),
-#             "duration": len(df)/FS
-#         }
-
-#     except Exception as e:
-#         traceback.print_exc()
-#         return {"error": str(e)}
-
+    finally:
+        if tmp_path and os.path.exists(tmp_path): os.remove(tmp_path)
