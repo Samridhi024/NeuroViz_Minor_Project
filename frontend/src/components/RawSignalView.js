@@ -7,7 +7,7 @@ const RawSignalView = ({ data, stats, features }) => {
   const channels = Object.keys(data[0]).filter(key => key !== 'time');
 
   const getChannelColor = (ch) => {
-    const colors = { T7: "#3b82f6", F8: "#10b981", Cz: "#ef4444", P4: "#f59e0b" };
+    const colors = { T7: "#67a1ff", F8: "#4dd5a8", Cz: "#f77373", P4: "#f7be5a" };
     return colors[ch] || "#6b7280";
   };
 

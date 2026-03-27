@@ -1,18 +1,41 @@
 // File: src/components/eegData.js
+// using namespace std;
 
 export const SENSOR_DATA = [
   // T7 (Left Temporal) - Far left side
-  { name: "T7", position: [-27.0, 24.0, 0.0], color: "#2a00c2" },   
+  { name: "T7", position: [-27.0, 24.0, 0.0], color: "#5f34f9" },   
   
   // F8 (Right Frontal) - Front right forehead
-  { name: "F8", position: [21.0, 20.0, 13.0], color: "#00670a" }, 
+  { name: "F8", position: [21.0, 20.0, 13.0], color: "#168021" }, 
+  
+  // F3 (Left Frontal) - Front left forehead (Added for EDF compatibility)
+  { name: "F3", position: [-21.0, 20.0, 13.0], color: "#16dbfe" },
+
+  // F4 (Right Frontal) - Front right forehead (Added for EDF compatibility)
+  { name: "F4", position: [21.0, 20.0, 13.0], color: "#3b82f6" },
   
   // Cz (Vertex) - The very top of the head
-  { name: "Cz", position: [0.0, 56.5, 0.0], color: "#8f0505" },    
+  { name: "Cz", position: [0.0, 56.5, 0.0], color: "#f93535" },    
   
   // P4 (Right Parietal) - Back right side
-  { name: "P4", position: [16.0, 44.0, -20.0], color: "#ff0000" } 
+  { name: "P4", position: [16.0, 44.0, -20.0], color: "#9c7904" } 
 ];
+
+// // File: src/components/eegData.js
+
+// export const SENSOR_DATA = [
+//   // T7 (Left Temporal) - Far left side
+//   { name: "T7", position: [-27.0, 24.0, 0.0], color: "#2a00c2" },   
+  
+//   // F8 (Right Frontal) - Front right forehead
+//   { name: "F8", position: [21.0, 20.0, 13.0], color: "#00670a" }, 
+  
+//   // Cz (Vertex) - The very top of the head
+//   { name: "Cz", position: [0.0, 56.5, 0.0], color: "#8f0505" },    
+  
+//   // P4 (Right Parietal) - Back right side
+//   { name: "P4", position: [16.0, 44.0, -20.0], color: "#ff0000" } 
+// ];
 
 // export const SENSOR_DATA = [
 //   // T7: Pushed way out to the far Left edge
