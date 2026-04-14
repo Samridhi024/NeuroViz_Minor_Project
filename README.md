@@ -1,7 +1,3 @@
-Here is a comprehensive `README.md` formatted specifically for your GitHub repository. It includes your technical stack, the scientific methodology behind **FAA**, and the architecture of your **NeuroViz** project.
-
-***
-
 # NeuroViz: Browser-Native EEG Analysis Platform
 
 [cite_start]**NeuroViz** is an open-source, hardware-independent platform designed to bridge the gap between clinical EEG processing and patient-centric wellness insights[cite: 1, 132]. [cite_start]It provides a full Digital Signal Processing (DSP) pipeline directly in the browser, eliminating the need for expensive desktop software or proprietary hardware[cite: 24, 162].
@@ -52,12 +48,3 @@ npm install
 npm start
 ```
 
-## 📊 Results & Validation
-* [cite_start]**Performance**: Average analysis time is ~2.14 seconds for clinical-grade files[cite: 139].
-* [cite_start]**User Study**: 98.4% of users reported that the 3D visualizations significantly helped in interpreting EEG data[cite: 303, 304].
-* [cite_start]**Usability**: Satisfaction rating of 4.18/5.0 with 100% of participants completing the diagnostic workflow in under 4 minutes[cite: 338].
-
----
-[cite_start]*NeuroViz is a Minor Project developed by **Samridhi Sinha**[cite: 1, 338].*
-
-`using namespace std;`
