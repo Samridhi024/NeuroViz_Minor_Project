@@ -1,10 +1,10 @@
 # NeuroViz: Browser-Native EEG Analysis Platform
 
-[cite_start]**NeuroViz** is an open-source, hardware-independent platform designed to bridge the gap between clinical EEG processing and patient-centric wellness insights[cite: 1, 132]. [cite_start]It provides a full Digital Signal Processing (DSP) pipeline directly in the browser, eliminating the need for expensive desktop software or proprietary hardware[cite: 24, 162].
+**NeuroViz** is an open-source, hardware-independent platform designed to bridge the gap between clinical EEG processing and patient-centric wellness insights[cite: 1, 132]. [cite_start]It provides a full Digital Signal Processing (DSP) pipeline directly in the browser, eliminating the need for expensive desktop software or proprietary hardware[cite: 24, 162].
 
 ## 🚀 Key Features
-* [cite_start]**Dual-Mode Interface**: A single-toggle system that switches between a high-density **Clinician Dashboard** and a plain-English **Patient Wellness View**[cite: 145, 146].
-* [cite_start]**Full DSP Pipeline**: Automated cleaning including Detrending, Notch filtering (50Hz), Butterworth Bandpass (0.5–45Hz), and Z-score Normalization[cite: 137, 185].
+**Dual-Mode Interface**: A single-toggle system that switches between a high-density **Clinician Dashboard** and a plain-English **Patient Wellness View**[cite: 145, 146].
+**Full DSP Pipeline**: Automated cleaning including Detrending, Notch filtering (50Hz), Butterworth Bandpass (0.5–45Hz), and Z-score Normalization[cite: 137, 185].
 * [cite_start]**FAA Computation**: Real-time calculation of Frontal Alpha Asymmetry to assess emotional valence and engagement[cite: 153, 154].
 * [cite_start]**3D Brain Topography**: Interactive Three.js-based 3D sensor mapping for real-time electrode health visualization[cite: 158, 159].
 * [cite_start]**Artifact Detection**: Heuristic-based detection for Eye Blinks (EOG), Muscle noise (EMG), and motion artifacts[cite: 147, 148].
