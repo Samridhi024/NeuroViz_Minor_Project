@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "Samruddhi Agros",
+    "slug": "samruddhi-agros-customer",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "samruddhiagros",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "backgroundColor": "#16A34A"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.samruddhiagros.customer"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#16A34A"
+      },
+      "package": "com.samruddhiagros.customer"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-location",
+      "expo-notifications",
+      "expo-secure-store"
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+import React from 'react';
+import { View, Text, StyleSheet } from 'react-native';
+
+export default function VerifyOtpScreen() {
+  // TODO: Implement OTP input + verification
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>Verify OTP</Text>
+      <Text style={styles.subtitle}>Enter the 6-digit code sent to your phone</Text>
+      {/* TODO: OTP input + Verify button */}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
+  title: { fontSize: 24, fontWeight: '700', color: '#111827', marginBottom: 8 },
+  subtitle: { fontSize: 16, color: '#6B7280' },
+});

@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "Samruddhi Delivery",
+    "slug": "samruddhi-agros-delivery",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "samruddhidelivery",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "backgroundColor": "#F59E0B"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.samruddhiagros.delivery",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "We need your location to navigate to pickup and delivery addresses.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "We need your location to share real-time updates with customers during delivery."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#F59E0B"
+      },
+      "package": "com.samruddhiagros.delivery",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow Samruddhi Delivery to use your location for navigation and real-time tracking."
+        }
+      ],
+      "expo-notifications",
+      "expo-secure-store"
+    ]
+  }
+}

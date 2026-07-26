@@ -1,0 +1,38 @@
+name: Deploy to Azure (staging)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 'Login to Azure'
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Deploy Bicep
+        run: |
+          az deployment group create --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --template-file infra/azure/main.bicep --parameters environment=staging
+      - name: Build and push server image to ACR
+        env:
+          ACR_NAME: ${{ secrets.ACR_NAME }}
+          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+        run: |
+          az acr login --name $ACR_NAME
+          IMAGE=${ACR_LOGIN_SERVER}/samruddhi/server:${GITHUB_SHA::8}
+          docker build -t $IMAGE ./server
+          docker push $IMAGE
+          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+
+      - name: Deploy Container App
+        env:
+          IMAGE: ${{ env.IMAGE }}
+          ACR_NAME: ${{ secrets.ACR_NAME }}
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+          RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+        run: |
+          az containerapp create --name samruddhi-staging-app --resource-group $RESOURCE_GROUP --environment samruddhi-staging-env --image $IMAGE --ingress 'external' --target-port 3000 --registry-server ${{ secrets.ACR_LOGIN_SERVER }} --registry-username $ACR_USERNAME --registry-password $ACR_PASSWORD || \
+          az containerapp update --name samruddhi-staging-app --resource-group $RESOURCE_GROUP --image $IMAGE

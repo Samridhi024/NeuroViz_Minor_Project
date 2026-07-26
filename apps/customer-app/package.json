@@ -1,0 +1,36 @@
+{
+  "name": "@samruddhi-agros/customer-app",
+  "version": "0.1.0",
+  "private": true,
+  "main": "expo-router/entry",
+  "scripts": {
+    "dev": "expo start",
+    "build": "echo 'Use EAS Build for production'",
+    "lint": "echo 'lint ok'",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "clean": "rm -rf .expo node_modules"
+  },
+  "dependencies": {
+    "expo": "~53.0.0",
+    "expo-router": "~4.0.0",
+    "expo-status-bar": "~2.2.0",
+    "expo-location": "~18.0.0",
+    "expo-notifications": "~0.31.0",
+    "expo-image": "~2.1.0",
+    "expo-secure-store": "~14.0.0",
+    "react": "^19.0.0",
+    "react-native": "^0.79.0",
+    "react-native-safe-area-context": "~5.4.0",
+    "react-native-screens": "~4.9.0",
+    "react-native-gesture-handler": "~2.24.0",
+    "react-native-reanimated": "~3.17.0",
+    "@samruddhi-agros/api-client": "workspace:*",
+    "@samruddhi-agros/shared-types": "workspace:*",
+    "@samruddhi-agros/ui-components": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "typescript": "^5.8.0"
+  }
+}

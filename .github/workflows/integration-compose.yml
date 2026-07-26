@@ -1,0 +1,44 @@
+name: Integration (docker-compose)
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Start docker-compose test stack
+        run: |
+          docker compose -f docker-compose.test.yml up -d --build
+      - name: Wait for server health
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:3000/health; then
+              echo "server healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "server did not become healthy" && exit 1
+      - name: Run integration tests
+        run: |
+          cd server
+          npm ci --no-audit --no-fund
+          RUN_INTEGRATION=1 npm test
+      - name: k6 smoke test (optional)
+        if: always()
+        env:
+          K6_SCRIPT: test/load/k6_script.js
+        run: |
+          # run k6 in a container against localhost
+          docker run --rm -i loadimpact/k6 run - < $K6_SCRIPT || echo "k6 finished with non-zero exit"
+      - name: Tear down
+        if: always()
+        run: |
+          docker compose -f docker-compose.test.yml down --volumes --remove-orphans

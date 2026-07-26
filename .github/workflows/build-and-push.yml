@@ -1,0 +1,24 @@
+name: Build and Push Image
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Build and push image
+        env:
+          ACR_NAME: ${{ secrets.ACR_NAME }}
+          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+        run: |
+          az acr login --name $ACR_NAME
+          IMAGE=${ACR_LOGIN_SERVER}/samruddhi/server:${GITHUB_SHA::8}
+          docker build -t $IMAGE ./server
+          docker push $IMAGE
+          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
