@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { AlertTriangle, CheckCircle, Activity, Info, RotateCcw, Zap } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -30,12 +30,10 @@ const PIPELINE_STEPS = [
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
- * Compute a real SNR proxy from features.
- * Uses the ratio of |mean| to std — a flat signal has near-zero mean
- * so we use max as the signal amplitude instead.
- * SNR (dB) ≈ 20 * log10(peak / std)
+ * Compute peak-to-RMS ratio in dB from the normalized signal statistics.
+ * This is useful for transient screening but is not a true signal-to-noise ratio.
  */
-function computeSnr(features, ch) {
+function computePeakRatio(features, ch) {
   const peak = Math.abs(features[`${ch}_Max`] || 0);
   const std  = features[`${ch}_Std`]  || 1e-6;
   if (std < 1e-6) return 0;
@@ -45,36 +43,59 @@ function computeSnr(features, ch) {
 /**
  * Classify a channel based on the selected detection method.
  * threshold  → uses Max Z-score value
- * kurtosis   → uses Std as a proxy (high std = heavy tails)
- * muscle     → uses DominantFreq (high dominant freq = muscle noise)
- * ocular     → uses low dominant freq (< 4 Hz) as blink proxy
+ * kurtosis   → uses Pearson kurtosis calculated by the backend
+ * muscle     → uses high-frequency relative power and dominant frequency
+ * ocular     → uses delta relative power, low-frequency dominance, and peak Z-score
  */
-function classifyChannel(features, ch, method, thresholdUV, zScoreCutoff) {
+function classifyChannel(features, ch, method, thresholdUV, zScoreCutoff, sourceUnit) {
   const maxVal  = Math.abs(features[`${ch}_Max`]          || 0);
-  const std     = Math.abs(features[`${ch}_Std`]          || 0);
   const domFreq =          features[`${ch}_DominantFreq`] || 0;
+  const domFreqFull =      features[`${ch}_DominantFreqFull`] || domFreq;
+  const kurtosis =         features[`${ch}_Kurtosis`] || 0;
+  const deltaRelative =    features[`${ch}_DeltaRelative`] || 0;
+  const betaRelative =     features[`${ch}_BetaRelative`] || 0;
+  const gammaRelative =    features[`${ch}_GammaRelative`] || 0;
+  const filteredPeak = Math.max(
+    Math.abs(features[`${ch}_FilteredMin`] || 0),
+    Math.abs(features[`${ch}_FilteredMax`] || 0),
+  );
+  const peakMicrovolts = sourceUnit?.startsWith('volts')
+    ? filteredPeak * 1e6
+    : sourceUnit?.startsWith('microvolts')
+      ? filteredPeak
+      : null;
 
   let status = 'clean';
   let type   = null;
 
   if (method === 'threshold') {
-    if (maxVal > zScoreCutoff + 1.5) { status = 'artifact';   type = ARTIFACT_TYPES[0]; }
-    else if (maxVal > zScoreCutoff)  { status = 'borderline'; }
+    const amplitudeArtifact = peakMicrovolts != null && peakMicrovolts > thresholdUV * 1.5;
+    const amplitudeBorderline = peakMicrovolts != null && peakMicrovolts > thresholdUV;
+    if (maxVal > zScoreCutoff + 1.5 || amplitudeArtifact) {
+      status = 'artifact';
+      type = ARTIFACT_TYPES[4];
+    } else if (maxVal > zScoreCutoff || amplitudeBorderline) {
+      status = 'borderline';
+    }
 
   } else if (method === 'kurtosis') {
-    // After Z-scoring, std ≈ 1.0 for normal. High std means heavy tails (artifacts).
-    if (std > 1.4)      { status = 'artifact';   type = ARTIFACT_TYPES[1]; }
-    else if (std > 1.1) { status = 'borderline'; }
+    if (kurtosis > 6)      { status = 'artifact';   type = ARTIFACT_TYPES[2]; }
+    else if (kurtosis > 4) { status = 'borderline'; }
 
   } else if (method === 'muscle') {
-    // Muscle noise shows up as high dominant frequency (> 20 Hz)
-    if (domFreq > 25)      { status = 'artifact';   type = ARTIFACT_TYPES[1]; }
-    else if (domFreq > 20) { status = 'borderline'; }
+    const highFrequencyRelative = betaRelative + gammaRelative;
+    if (domFreq > 25 || highFrequencyRelative > 0.45) {
+      status = 'artifact'; type = ARTIFACT_TYPES[1];
+    } else if (domFreq > 20 || highFrequencyRelative > 0.30) {
+      status = 'borderline';
+    }
 
   } else if (method === 'ocular') {
-    // Eye blinks produce very low frequency dominant peaks (< 4 Hz)
-    if (domFreq < 2)      { status = 'artifact';   type = ARTIFACT_TYPES[0]; }
-    else if (domFreq < 4) { status = 'borderline'; }
+    if (domFreqFull < 4 && deltaRelative > 0.65 && maxVal > 4) {
+      status = 'artifact'; type = ARTIFACT_TYPES[0];
+    } else if (domFreqFull < 4 && deltaRelative > 0.45) {
+      status = 'borderline';
+    }
   }
 
   return { status, type };
@@ -139,12 +160,14 @@ export default function ArtifactDetector({ data, userMode = 'clinician' }) {
   const [results,     setResults]     = useState(null);
 
   // Derive signal channels from backend features, restricted to known signal channels only
-  const channels = data?.features
-    ? Object.keys(data.features)
-        .filter(k => k.endsWith('_Max'))
-        .map(k => k.replace('_Max', ''))
-        .filter(ch => SIGNAL_CHANNELS.includes(ch))
-    : ['T7', 'F8'];
+  const channels = useMemo(() => (
+    data?.features
+      ? Object.keys(data.features)
+          .filter(k => k.endsWith('_Max'))
+          .map(k => k.replace('_Max', ''))
+          .filter(ch => SIGNAL_CHANNELS.includes(ch))
+      : ['T7', 'F8']
+  ), [data?.features]);
 
   // Compute epoch total from actual signal length if available
   const signalLengthSec = data?.raw_graph?.length
@@ -161,8 +184,15 @@ export default function ArtifactDetector({ data, userMode = 'clinician' }) {
 
     setTimeout(() => {
       const chResults = channels.map(ch => {
-        const { status, type } = classifyChannel(data.features, ch, method, thresholdUV, zScore);
-        const snr  = computeSnr(data.features, ch);
+        const { status, type } = classifyChannel(
+          data.features,
+          ch,
+          method,
+          thresholdUV,
+          zScore,
+          data.raw_stats?.Unit,
+        );
+        const peakRatio = computePeakRatio(data.features, ch);
         const maxVal = Math.abs(data.features[`${ch}_Max`] || 0);
 
         return {
@@ -170,7 +200,7 @@ export default function ArtifactDetector({ data, userMode = 'clinician' }) {
           status,
           type,
           pct: Math.round(Math.min(maxVal * 15, 100)),
-          snr,
+          peakRatio,
           domFreq: (data.features[`${ch}_DominantFreq`] || 0).toFixed(1),
         };
       });
@@ -181,13 +211,13 @@ export default function ArtifactDetector({ data, userMode = 'clinician' }) {
       const epochsArt = Math.round(arts * 12 + borders * 4);
       const retention = Math.round((1 - Math.min(epochsArt / epochTotal, 1)) * 100);
       const avgSnr    = total > 0
-        ? (chResults.reduce((s, r) => s + parseFloat(r.snr), 0) / total).toFixed(1)
+        ? (chResults.reduce((s, r) => s + parseFloat(r.peakRatio), 0) / total).toFixed(1)
         : '0.0';
 
       setResults({
-        chResults, total, arts, borders,
-        clean: total - arts - borders,
-        epochsArt, epochTotal, retention, avgSnr,
+          chResults, total, arts, borders,
+          clean: total - arts - borders,
+          epochsArt, epochTotal, retention, avgPeakRatio: avgSnr,
       });
       setRunning(false);
       setActiveTab('report');
@@ -217,7 +247,7 @@ export default function ArtifactDetector({ data, userMode = 'clinician' }) {
           )}
         </div>
         <p className="text-muted mb-3" style={{ fontSize: 12 }}>
-          Identify signal artifacts using real extracted features
+          Exploratory artifact screening using extracted signal features
         </p>
 
         <ul className="nav nav-tabs border-0" style={{ gap: 4 }}>
@@ -446,10 +476,11 @@ export default function ArtifactDetector({ data, userMode = 'clinician' }) {
                   : <AlertTriangle size={16} style={{ flexShrink: 0 }} />
                 }
                 <span>
-                  <strong>{results.retention}% epoch retention.</strong>{' '}
+                  <strong>{results.retention}% estimated retention.</strong>{' '}
                   {results.retention >= 80
-                    ? 'Signal is statistically stable for analysis.'
-                    : 'Consider reviewing raw data for noise sources.'}
+                    ? 'No major channel-level flag was found by this selected heuristic.'
+                    : 'Review the raw data for possible noise sources.'}
+                  {' '}This is a channel-screen estimate, not full epoch rejection.
                 </span>
               </div>
 
@@ -481,7 +512,7 @@ export default function ArtifactDetector({ data, userMode = 'clinician' }) {
                             {r.status.toUpperCase()}
                           </span>
                           <span className="text-muted" style={{ fontSize: 11 }}>
-                            SNR {r.snr} dB &nbsp;·&nbsp; {r.domFreq} Hz
+                            Peak/RMS {r.peakRatio} dB &nbsp;·&nbsp; {r.domFreq} Hz
                           </span>
                         </div>
                         {r.type && (
@@ -504,9 +535,9 @@ export default function ArtifactDetector({ data, userMode = 'clinician' }) {
                   ['Artifact channels',    results.arts],
                   ['Borderline channels',  results.borders],
                   ['Clean channels',       results.clean],
-                  ['Avg SNR',              `${results.avgSnr} dB`],
-                  ['Epoch retention',      `${results.retention}%`],
-                  ['Epochs flagged',       `${results.epochsArt} / ${results.epochTotal}`],
+                  ['Avg peak/RMS',         `${results.avgPeakRatio} dB`],
+                  ['Estimated retention',  `${results.retention}%`],
+                  ['Estimated flagged epochs', `${results.epochsArt} / ${results.epochTotal}`],
                   ['Detection method',     DETECTION_METHODS.find(m => m.id === method)?.label ?? method],
                 ].map(([k, v], i) => (
                   <div

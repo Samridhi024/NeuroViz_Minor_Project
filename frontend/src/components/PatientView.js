@@ -1,495 +1,965 @@
-import React from 'react';
-import SensorMap from './SensorMap';
-import { Zap, Heart, Info, BookOpen, Sun, Moon, Coffee } from 'lucide-react';
+import React from "react";
+import SensorMap from "./SensorMap";
+import { CHANNEL_COLORS } from "./eegData";
+
+import {
+  CartesianGrid,
+  Legend,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+
+import {
+  Activity,
+  Brain,
+  CheckCircle2,
+  FileCheck2,
+  Info,
+  Radio,
+  ShieldCheck,
+  TriangleAlert,
+  Waves,
+} from "lucide-react";
+
+const DOMINANT_FREQUENCY_SUFFIX = "_DominantFreq";
+
+const FEATURE_SUFFIXES = [
+  "_Mean",
+  "_Std",
+  "_Min",
+  "_Max",
+  "_Alpha",
+  DOMINANT_FREQUENCY_SUFFIX,
+];
+
+const formatNumber = (value, digits = 1) => {
+  const numericValue = Number(value);
+
+  return Number.isFinite(numericValue)
+    ? numericValue.toFixed(digits)
+    : "Not available";
+};
+
+/*
+  Find channels inside the returned feature object.
+  This works even when the channels are in a different order.
+*/
+const extractChannels = (features = {}) => {
+  const channels = new Set();
+
+  Object.keys(features).forEach((featureName) => {
+    const suffix = FEATURE_SUFFIXES.find((item) =>
+      featureName.endsWith(item)
+    );
+
+    if (suffix) {
+      channels.add(
+        featureName.slice(0, -suffix.length)
+      );
+    }
+  });
+
+  return Array.from(channels);
+};
+
+/*
+  Find graph channel names from raw_graph and clean_graph.
+*/
+const getGraphChannels = (
+  rawGraph = [],
+  cleanGraph = [],
+  fallbackChannels = []
+) => {
+  const names = new Set();
+
+  const firstRawRow = rawGraph[0] || {};
+  const firstCleanRow = cleanGraph[0] || {};
+
+  [firstRawRow, firstCleanRow].forEach((row) => {
+    Object.keys(row).forEach((key) => {
+      if (
+        key !== "time" &&
+        Number.isFinite(Number(row[key]))
+      ) {
+        names.add(key);
+      }
+    });
+  });
+
+  fallbackChannels.forEach((channel) => {
+    names.add(channel);
+  });
+
+  // Do not overcrowd the patient graph.
+  return Array.from(names).slice(0, 6);
+};
+
+/*
+  Show only a short, readable part of the signal.
+  A large recording would otherwise look too crowded.
+*/
+const buildReadablePreview = (
+  rows = [],
+  seconds = 8,
+  maxPoints = 450
+) => {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return [];
+  }
+
+  const firstTime = Number(rows[0]?.time);
+  const hasValidTime = Number.isFinite(firstTime);
+
+  const visibleRows = hasValidTime
+    ? rows.filter((row) => {
+        const currentTime = Number(row.time);
+
+        return (
+          Number.isFinite(currentTime) &&
+          currentTime <= firstTime + seconds
+        );
+      })
+    : rows;
+
+  const source =
+    visibleRows.length > 0 ? visibleRows : rows;
+
+  const step = Math.max(
+    1,
+    Math.ceil(source.length / maxPoints)
+  );
+
+  return source.filter(
+    (_, index) => index % step === 0
+  );
+};
+
+/*
+  Find one dominant-frequency value.
+*/
+const findDominantFrequency = (
+  features = {},
+  channels = []
+) => {
+  const preferredOrder = [
+    "F3",
+    "F4",
+    "T7",
+    "F8",
+    "Cz",
+    "P4",
+    ...channels,
+  ];
+
+  const checked = new Set();
+
+  for (const channel of preferredOrder) {
+    if (checked.has(channel)) {
+      continue;
+    }
+
+    checked.add(channel);
+
+    const value = Number(
+      features[
+        `${channel}${DOMINANT_FREQUENCY_SUFFIX}`
+      ]
+    );
+
+    if (Number.isFinite(value)) {
+      return {
+        channel,
+        value,
+      };
+    }
+  }
+
+  const fallbackKey = Object.keys(features).find(
+    (key) =>
+      key.endsWith(
+        DOMINANT_FREQUENCY_SUFFIX
+      ) &&
+      Number.isFinite(Number(features[key]))
+  );
+
+  if (!fallbackKey) {
+    return null;
+  }
+
+  return {
+    channel: fallbackKey.slice(
+      0,
+      -DOMINANT_FREQUENCY_SUFFIX.length
+    ),
+    value: Number(features[fallbackKey]),
+  };
+};
+
+/*
+  Create a patient-friendly alpha-comparison explanation.
+*/
+const getAlphaSummary = ({
+  hasFAA,
+  asymmetry,
+  faaDetails,
+}) => {
+  if (!hasFAA) {
+    return {
+      title:
+        "A side-to-side comparison was not available",
+      summary:
+        "The uploaded recording did not contain a supported left and right channel pair for this comparison. Other EEG measurements may still be available.",
+      badge: "Unavailable",
+      color: "secondary",
+    };
+  }
+
+  if (
+    faaDetails &&
+    !faaDetails.standard_frontal_pair
+  ) {
+    return {
+      title:
+        "An extra side-to-side comparison was completed",
+      summary:
+        "The program compared two available electrode signals. The usual forehead pair was not present, so this result is kept only as an experimental measurement. It cannot tell whether the person was relaxed, stressed, focused, healthy or unwell.",
+      badge: "Research only",
+      color: "warning",
+    };
+  }
+
+  if (asymmetry > 0.02) {
+    return {
+      title:
+        "A small side-to-side difference was measured",
+      summary:
+        "The two forehead signals did not have exactly the same alpha activity. This is simply a comparison between two EEG signals. It is not a score for mood, focus, stress or health.",
+      badge: "Difference found",
+      color: "primary",
+    };
+  }
+
+  if (asymmetry < -0.02) {
+    return {
+      title:
+        "A small side-to-side difference was measured",
+      summary:
+        "The two forehead signals did not have exactly the same alpha activity. This is simply a comparison between two EEG signals. It is not evidence of stress, illness or a particular emotional state.",
+      badge: "Difference found",
+      color: "info",
+    };
+  }
+
+  return {
+    title:
+      "The two alpha measurements were quite similar",
+    summary:
+      "Only a small difference was measured between the two alpha-power values. This result alone cannot determine an emotional, wellness or medical condition.",
+    badge: "Small difference",
+    color: "secondary",
+  };
+};
+
+/*
+  Patient-friendly graph.
+*/
+const PatientSignalChart = ({
+  title,
+  subtitle,
+  rows,
+  channels,
+  cleaned = false,
+}) => {
+  return (
+    <div className="card border-0 shadow-sm rounded-4 p-4 h-100 bg-white">
+      <div className="d-flex align-items-start gap-3 mb-3">
+        <div
+          className={`p-2 rounded-3 ${
+            cleaned
+              ? "bg-success-subtle text-success"
+              : "bg-warning-subtle text-warning"
+          }`}
+        >
+          {cleaned ? (
+            <ShieldCheck size={22} />
+          ) : (
+            <Waves size={22} />
+          )}
+        </div>
+
+        <div>
+          <h5 className="fw-bold mb-1">
+            {title}
+          </h5>
+
+          <p className="text-muted small mb-0">
+            {subtitle}
+          </p>
+        </div>
+      </div>
+
+      {rows.length > 0 &&
+      channels.length > 0 ? (
+        <div
+          style={{
+            width: "100%",
+            height: 250,
+          }}
+        >
+          <ResponsiveContainer
+            width="100%"
+            height="100%"
+          >
+            <LineChart
+              data={rows}
+              margin={{
+                top: 8,
+                right: 18,
+                left: 0,
+                bottom: 12,
+              }}
+            >
+              <CartesianGrid
+                strokeDasharray="3 3"
+                vertical={false}
+                stroke="#e5e7eb"
+              />
+
+              <XAxis
+                dataKey="time"
+                tick={{
+                  fontSize: 10,
+                  fill: "#64748b",
+                }}
+                label={{
+                  value: "Time",
+                  position: "insideBottom",
+                  offset: -8,
+                }}
+              />
+
+              <YAxis
+                width={45}
+                tick={{
+                  fontSize: 10,
+                  fill: "#64748b",
+                }}
+                domain={["auto", "auto"]}
+              />
+
+              <Tooltip
+                contentStyle={{
+                  borderRadius: 10,
+                  border:
+                    "1px solid #e5e7eb",
+                }}
+                formatter={(value, name) => [
+                  formatNumber(value, 3),
+                  name,
+                ]}
+              />
+
+              <Legend
+                verticalAlign="top"
+                height={30}
+              />
+
+              {channels.map((channel) => (
+                <Line
+                  key={channel}
+                  type="linear"
+                  dataKey={channel}
+                  name={channel}
+                  stroke={
+                    CHANNEL_COLORS[channel] ||
+                    "#64748b"
+                  }
+                  strokeWidth={1.25}
+                  dot={false}
+                  isAnimationActive={false}
+                  connectNulls={false}
+                />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      ) : (
+        <div className="p-4 bg-light rounded-3 text-muted small">
+          A graph preview was not returned
+          for this recording.
+        </div>
+      )}
+    </div>
+  );
+};
 
 const PatientView = ({ data }) => {
-  if (!data) return null;
+  if (!data) {
+    return null;
+  }
 
-  // ─── Data Extraction ───────────────────────────────────────────────────────
-  const asymmetry = data.asymmetry_score || 0;
-  const focusScore = data.features?.['T7_DominantFreq'] || 0;
-  const alphaIntensity = data.features?.['T7_Alpha'] || 0; 
+  const features = data.features || {};
+  const faaDetails =
+    data.faa_details || null;
 
-  // ─── Wellness Logic (Thresholds for Z-Score Data) ──────────────────────────
-  const getWellnessSummary = () => {
-    if (asymmetry > 0.02) {
-      return {
-        title: "You are in the 'Zone'!",
-        summary: "Your brain shows high approach motivation! You are feeling 'Engaged' and 'Proactive.' This is the perfect state for creative problem solving or focused learning.",
-        icon: <Zap className="text-primary" size={32} />,
-        statusText: "Engaged",
-        colorClass: "text-primary",
-        borderClass: "border-primary"
-      };
-    } 
-    else if (asymmetry < -0.02) {
-      return {
-        title: "Time for a Mental Break",
-        summary: "We notice a slight shift toward right-frontal dominance. This usually happens when the brain feels overwhelmed. A quick 2-minute breathing exercise could help reset your focus.",
-        icon: <Moon className="text-info" size={32} />,
-        statusText: "Reflective",
-        colorClass: "text-info",
-        borderClass: "border-info"
-      };
-    } 
-    else if (alphaIntensity > 1.1) {
-        return {
-          title: "Deeply Relaxed",
-          summary: "Strong Alpha rhythms detected! Your mind is in a very calm, resting state—similar to light meditation. This is ideal for recovery and visualization.",
-          icon: <Coffee className="text-secondary" size={32} />,
-          statusText: "Relaxed",
-          colorClass: "text-secondary",
-          borderClass: "border-secondary"
-        };
-    }
-    return {
-      title: "Your Brain is Balanced",
-      summary: "Your brain waves are in a steady, resting state. You aren't over-stressed, but you aren't over-exerted either. It's a great time for routine tasks or light reading.",
-      icon: <Sun className="text-warning" size={32} />,
-      statusText: "Neutral",
-      colorClass: "text-warning",
-      borderClass: "border-warning"
-    };
-  };
+  const rawAsymmetry =
+    data.asymmetry_score;
 
-  const wellness = getWellnessSummary();
+  const hasFAA =
+    rawAsymmetry !== null &&
+    rawAsymmetry !== undefined &&
+    Number.isFinite(
+      Number(rawAsymmetry)
+    );
 
-  // ─── Dynamic Progress Math ────────────────────────────────────────────────
-  // This ensures the bar moves based on the "Engaged" dataset
-  const baseSpeed = (focusScore - 7) * 8;      
-  const engagementBoost = asymmetry * 150;    
-  const mentalLoadPct = Math.min(95, Math.max(10, baseSpeed + engagementBoost + 35));
+  const asymmetry = hasFAA
+    ? Number(rawAsymmetry)
+    : null;
+
+  const channels =
+    extractChannels(features);
+
+  const dominantFrequency =
+    findDominantFrequency(
+      features,
+      channels
+    );
+
+  const alphaSummary =
+    getAlphaSummary({
+      hasFAA,
+      asymmetry,
+      faaDetails,
+    });
+
+  const featureCount =
+    Object.keys(features).length;
+
+  const sourceFile =
+    data.raw_stats?.File ||
+    data.stats?.File ||
+    data.file_name ||
+    data.filename ||
+    "Uploaded EEG recording";
+
+  const rawGraph =
+    Array.isArray(data.raw_graph)
+      ? data.raw_graph
+      : [];
+
+  const cleanGraph =
+    Array.isArray(data.clean_graph)
+      ? data.clean_graph
+      : [];
+
+  const graphChannels =
+    getGraphChannels(
+      rawGraph,
+      cleanGraph,
+      channels
+    );
+
+  const rawPreview =
+    buildReadablePreview(rawGraph);
+
+  const cleanPreview =
+    buildReadablePreview(cleanGraph);
 
   return (
-    <div className="row g-4 fade-in">
-      <div className="col-lg-7 col-12">
+    <div className="fade-in">
+      {/* MAIN RESULT BANNER */}
+      <div className="card border-0 shadow-sm rounded-4 p-4 mb-4 bg-white">
+        <div className="d-flex flex-column flex-md-row justify-content-between gap-3">
+          <div className="d-flex gap-3 align-items-start">
+            <div className="p-3 rounded-4 bg-success-subtle text-success">
+              <CheckCircle2 size={28} />
+            </div>
+
+            <div>
+              <h4 className="fw-bold mb-1">
+                Your EEG recording was processed
+              </h4>
+
+              <p
+                className="text-muted mb-0"
+                style={{
+                  maxWidth: "760px",
+                }}
+              >
+                NeuroViz found{" "}
+                {channels.length ||
+                  "the available"}{" "}
+                recognised EEG
+                {channels.length === 1
+                  ? " channel"
+                  : " channels"}{" "}
+                and calculated general signal
+                measurements. The sections below
+                explain the results in simple
+                language.
+              </p>
+            </div>
+          </div>
+
+          <span className="badge bg-light text-dark border align-self-start px-3 py-2">
+            General EEG analysis
+          </span>
+        </div>
+      </div>
+
+      {/* SIMPLE STATUS CARDS */}
+      <div className="row g-3 mb-4">
+        <div className="col-sm-6 col-xl-3">
+          <div className="card border-0 shadow-sm rounded-4 p-3 h-100 bg-white">
+            <FileCheck2
+              size={22}
+              className="text-success mb-2"
+            />
+
+            <small className="text-muted fw-bold text-uppercase">
+              File processing
+            </small>
+
+            <div className="fw-bold mt-1">
+              Completed
+            </div>
+
+            <small className="text-muted">
+              The uploaded EEG file was read
+              successfully.
+            </small>
+          </div>
+        </div>
+
+        <div className="col-sm-6 col-xl-3">
+          <div className="card border-0 shadow-sm rounded-4 p-3 h-100 bg-white">
+            <Radio
+              size={22}
+              className="text-primary mb-2"
+            />
+
+            <small className="text-muted fw-bold text-uppercase">
+              Electrode signals found
+            </small>
+
+            <div className="fw-bold mt-1">
+              {channels.length ||
+                "Not reported"}
+            </div>
+
+            <small className="text-muted">
+              Signals recognised inside the
+              uploaded recording.
+            </small>
+          </div>
+        </div>
+
+        <div className="col-sm-6 col-xl-3">
+          <div className="card border-0 shadow-sm rounded-4 p-3 h-100 bg-white">
+            <Waves
+              size={22}
+              className="text-warning mb-2"
+            />
+
+            <small className="text-muted fw-bold text-uppercase">
+              Main measured rhythm
+            </small>
+
+            <div className="fw-bold mt-1">
+              {dominantFrequency
+                ? `${formatNumber(
+                    dominantFrequency.value
+                  )} Hz`
+                : "Not available"}
+            </div>
+
+            <small className="text-muted">
+              {dominantFrequency
+                ? `About ${formatNumber(
+                    dominantFrequency.value
+                  )} repeating waves per second on ${dominantFrequency.channel}.`
+                : "No main rhythm value was returned."}
+            </small>
+          </div>
+        </div>
+
+        <div className="col-sm-6 col-xl-3">
+          <div className="card border-0 shadow-sm rounded-4 p-3 h-100 bg-white">
+            <ShieldCheck
+              size={22}
+              className="text-secondary mb-2"
+            />
+
+            <small className="text-muted fw-bold text-uppercase">
+              Medical diagnosis
+            </small>
+
+            <div className="fw-bold mt-1">
+              Not provided
+            </div>
+
+            <small className="text-muted">
+              NeuroViz is an exploratory signal
+              analysis tool.
+            </small>
+          </div>
+        </div>
+      </div>
+
+      {/* SIMPLE FINDINGS */}
+      <div className="row g-4 mb-4">
+        <div className="col-lg-7">
+          <div
+            className={`card border-0 shadow-sm rounded-4 p-4 h-100 bg-white border-start border-4 border-${alphaSummary.color}`}
+          >
+            <div className="d-flex justify-content-between align-items-start gap-3 mb-3">
+              <div className="d-flex align-items-center gap-2">
+                <Activity
+                  size={22}
+                  className={`text-${alphaSummary.color}`}
+                />
+
+                <h5 className="fw-bold mb-0">
+                  What did the program notice?
+                </h5>
+              </div>
+
+              <span
+                className={`badge bg-${alphaSummary.color}${
+                  alphaSummary.color ===
+                  "warning"
+                    ? " text-dark"
+                    : ""
+                }`}
+              >
+                {alphaSummary.badge}
+              </span>
+            </div>
+
+            <h6 className="fw-bold mb-2">
+              {alphaSummary.title}
+            </h6>
+
+            <p
+              className="text-muted mb-3"
+              style={{
+                lineHeight: 1.65,
+              }}
+            >
+              {alphaSummary.summary}
+            </p>
+
+            <div className="p-3 rounded-3 bg-light d-flex gap-2 align-items-start">
+              <Info
+                size={18}
+                className="text-primary flex-shrink-0 mt-1"
+              />
+
+              <div className="small text-dark">
+                {dominantFrequency
+                  ? `The strongest repeating pattern was approximately ${formatNumber(
+                      dominantFrequency.value
+                    )} waves per second on ${dominantFrequency.channel}. This describes the signal's speed; it is not a health score.`
+                  : "A main-frequency measurement was not available for this recording."}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="col-lg-5">
+          <div className="card border-0 shadow-sm rounded-4 p-4 h-100 bg-white">
+            <h5 className="fw-bold mb-3">
+              What was checked?
+            </h5>
+
+            {[
+              "Which electrode signals were present in the uploaded file",
+              "The signal's general range and variation",
+              "Different types of repeating EEG activity",
+              "The strongest repeating signal frequency",
+              "A side-to-side comparison when a suitable pair was available",
+              "Possible signs of movement or recording noise",
+            ].map((item) => (
+              <div
+                key={item}
+                className="d-flex gap-2 align-items-start mb-2"
+              >
+                <CheckCircle2
+                  size={16}
+                  className="text-success flex-shrink-0 mt-1"
+                />
+
+                <span className="small text-dark">
+                  {item}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* RAW AND CLEANED SIGNAL EXPLANATION */}
+      <div className="card border-0 shadow-sm rounded-4 p-4 mb-4 bg-white">
+        <div className="mb-4">
+          <h4 className="fw-bold mb-2">
+            How to understand your EEG graphs
+          </h4>
+
+          <p className="text-muted mb-0">
+            Each coloured line comes from an
+            electrode placed at a different
+            location. Moving from left to right
+            shows time passing. Moving up or down
+            shows the changing electrical signal
+            strength. A wavy or uneven EEG line is
+            normal because brain signals change
+            many times every second.
+          </p>
+
+          <p className="small text-primary mt-2 mb-0">
+            Note: The two graphs use different vertical scales. The raw graph has a much
+            larger amplitude range, so its smaller changes appear compressed. The cleaned
+            graph is normalized around zero, making its remaining EEG changes easier to see.
+          </p>
+        </div>
+
+        <div className="row g-4 mb-4">
+          <div className="col-xl-6">
+            <PatientSignalChart
+              title="Raw recording — before cleaning"
+              subtitle="This is the signal exactly as it came from the uploaded file. It can contain brain activity together with blinking, movement, loose-electrode effects and electrical interference."
+              rows={rawPreview}
+              channels={graphChannels}
+            />
+          </div>
+
+          <div className="col-xl-6">
+            <PatientSignalChart
+              title="Cleaned recording — after noise reduction"
+              subtitle="This is the same recording after common unwanted noise was reduced. It is easier to analyse, but it should still look wavy rather than perfectly smooth or flat."
+              rows={cleanPreview}
+              channels={graphChannels}
+              cleaned
+            />
+          </div>
+        </div>
+
+        <div className="row g-3">
+          <div className="col-md-4">
+            <div className="p-3 rounded-4 bg-light h-100">
+              <h6 className="fw-bold mb-2">
+                What changed?
+              </h6>
+
+              <p className="small text-muted mb-0">
+                Cleaning reduces slow drifting,
+                electrical hum and some sudden
+                noise. It does not replace the
+                original recording or create new
+                brain activity.
+              </p>
+            </div>
+          </div>
+
+          <div className="col-md-4">
+            <div className="p-3 rounded-4 bg-light h-100">
+              <h6 className="fw-bold mb-2">
+                Why are there still spikes?
+              </h6>
+
+              <p className="small text-muted mb-0">
+                Real EEG is naturally irregular.
+                Some peaks may be brain activity,
+                while others may come from
+                blinking, muscle movement or
+                electrode contact. One spike alone
+                does not show a disease.
+              </p>
+            </div>
+          </div>
+
+          <div className="col-md-4">
+            <div className="p-3 rounded-4 bg-light h-100">
+              <h6 className="fw-bold mb-2">
+                Which graph is used?
+              </h6>
+
+              <p className="small text-muted mb-0">
+                The cleaned signal is used for
+                measurements because common noise
+                has been reduced. The raw graph
+                remains visible so the original
+                input can still be checked.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* LIMITATION */}
+      <div className="alert alert-warning border-0 rounded-4 p-4 d-flex gap-3 align-items-start mb-4">
+        <TriangleAlert
+          size={24}
+          className="flex-shrink-0"
+        />
+
+        <div>
+          <div className="fw-bold mb-1">
+            Important limitation
+          </div>
+
+          <div>
+            This general EEG result does not
+            diagnose insomnia, depression,
+            anxiety, palsy, epilepsy or another
+            medical condition. EEG measurements
+            can be affected by movement, electrode
+            placement, signal quality and recording
+            conditions. Medical interpretation
+            requires a qualified professional.
+          </div>
+        </div>
+      </div>
+
+      {/* SENSOR MAP */}
+      <div className="mb-4">
+        <div className="d-flex align-items-center gap-2 mb-3">
+          <Brain
+            size={21}
+            className="text-primary"
+          />
+
+          <div>
+            <h5 className="fw-bold mb-0">
+              Where were the signals recorded?
+            </h5>
+
+            <small className="text-muted">
+              The coloured points show recognised
+              electrode locations. The colours are
+              used to separate the signals and are
+              not health warnings.
+            </small>
+          </div>
+        </div>
+
         <SensorMap data={data} />
       </div>
 
-      <div className="col-lg-5 col-12 d-flex flex-column gap-3">
-        {/* Quick Stats Grid */}
-        <div className="row g-3">
-            <div className="col-6">
-                <div className="card border-0 shadow-sm rounded-4 p-3 bg-white text-center">
-                    <Heart size={24} className={`${wellness.colorClass} mx-auto mb-2`} />
-                    <small className="text-muted d-block small fw-bold">EMOTIONAL BIAS</small>
-                    <span className="fw-bold">{wellness.statusText}</span>
-                </div>
-            </div>
-            <div className="col-6">
-                <div className="card border-0 shadow-sm rounded-4 p-3 bg-white text-center">
-                    <Zap size={24} className="text-warning mx-auto mb-2" />
-                    <small className="text-muted d-block small fw-bold">MENTAL SPEED</small>
-                    <span className="fw-bold">{focusScore.toFixed(1)} Hz</span>
-                </div>
-            </div>
-        </div>
+      {/* OPTIONAL TECHNICAL DETAILS */}
+      <details className="card border-0 shadow-sm rounded-4 bg-white mb-4">
+        <summary
+          className="p-4 fw-bold"
+          style={{
+            cursor: "pointer",
+          }}
+        >
+          View technical details
+        </summary>
 
-        {/* Dynamic Summary Box */}
-        <div className={`card border-0 shadow-sm rounded-4 p-4 bg-white border-start border-4 ${wellness.borderClass}`}>
-          <div className="d-flex align-items-center gap-3 mb-3">
-            <div className="p-2 bg-light rounded-3">
-                {wellness.icon}
+        <div className="px-4 pb-4">
+          <div className="table-responsive">
+            <table className="table table-sm align-middle mb-0">
+              <tbody>
+                <tr>
+                  <th className="text-muted fw-medium">
+                    Source file
+                  </th>
+
+                  <td>{sourceFile}</td>
+                </tr>
+
+                <tr>
+                  <th className="text-muted fw-medium">
+                    Detected channels
+                  </th>
+
+                  <td>
+                    {channels.length
+                      ? channels.join(", ")
+                      : "Not reported"}
+                  </td>
+                </tr>
+
+                <tr>
+                  <th className="text-muted fw-medium">
+                    Returned feature values
+                  </th>
+
+                  <td>{featureCount}</td>
+                </tr>
+
+                <tr>
+                  <th className="text-muted fw-medium">
+                    FAA score
+                  </th>
+
+                  <td>
+                    {hasFAA
+                      ? formatNumber(
+                          asymmetry,
+                          4
+                        )
+                      : "Not available"}
+                  </td>
+                </tr>
+
+                <tr>
+                  <th className="text-muted fw-medium">
+                    FAA channel pair
+                  </th>
+
+                  <td>
+                    {faaDetails?.pair_label ||
+                      "Not reported"}
+                  </td>
+                </tr>
+
+                <tr>
+                  <th className="text-muted fw-medium">
+                    FAA pair type
+                  </th>
+
+                  <td>
+                    {faaDetails
+                      ? faaDetails.standard_frontal_pair
+                        ? "Standard frontal pair"
+                        : "Experimental fallback pair"
+                      : "Not reported"}
+                  </td>
+                </tr>
+
+                <tr>
+                  <th className="text-muted fw-medium">
+                    Dominant frequency
+                  </th>
+
+                  <td>
+                    {dominantFrequency
+                      ? `${formatNumber(
+                          dominantFrequency.value
+                        )} Hz (${dominantFrequency.channel})`
+                      : "Not available"}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {faaDetails?.quality_note && (
+            <div className="small text-muted mt-3">
+              FAA note:{" "}
+              {faaDetails.quality_note}
             </div>
-            <h5 className="fw-bold mb-0 text-dark">{wellness.title}</h5>
-          </div>
-          
-          <div className="p-3 rounded-4 bg-light border-0">
-            <p className="text-dark mb-0 leading-relaxed" style={{ fontSize: '1rem', lineHeight: '1.6' }}>
-                <BookOpen size={18} className="me-2 text-primary mb-1" />
-                {wellness.summary}
-            </p>
-          </div>
+          )}
         </div>
-
-        {/* ─── Static Progress Gauge (No Animation) ─── */}
-        <div className="card border-0 shadow-sm rounded-4 p-4 bg-white">
-          <div className="d-flex justify-content-between align-items-center mb-3">
-            <h6 className="fw-bold text-muted text-uppercase small mb-0">Cognitive Engagement</h6>
-            <span className={`badge ${asymmetry > 0.02 ? 'bg-primary' : 'bg-light text-dark'}`}>
-                {Math.round(mentalLoadPct)}%
-            </span>
-          </div>
-          
-          <div className="progress" style={{height: '14px', borderRadius: '10px', backgroundColor: '#f0f0f0'}}>
-            <div 
-              className={`progress-bar ${asymmetry > 0.02 ? 'bg-primary' : 'bg-info'}`} 
-              style={{
-                width: `${mentalLoadPct}%`,
-                transition: 'width 0.5s ease' // Standard simple transition
-              }}
-            ></div>
-          </div>
-          
-          <div className="d-flex justify-content-between mt-2 small text-muted fw-medium">
-            <span>Relaxed</span>
-            <span className={asymmetry > 0.02 ? "text-primary fw-bold" : ""}>Active / Engaged</span>
-          </div>
-        </div>
-
-        <div className="mt-auto d-flex align-items-center gap-2 text-muted small px-2">
-            <Info size={14} />
-            <span>FAA Score: <strong>{asymmetry.toFixed(4)}</strong></span>
-        </div>
-      </div>
+      </details>
     </div>
   );
 };
 
 export default PatientView;
-
-// import React from 'react';
-// import SensorMap from './SensorMap';
-// import { Zap, Heart, Info, BookOpen, Sun, Moon, Coffee } from 'lucide-react';
-
-// const PatientView = ({ data }) => {
-//   if (!data) return null;
-
-//   // ─── Data Extraction ───────────────────────────────────────────────────────
-//   const asymmetry = data.asymmetry_score || 0;
-//   const focusScore = data.features?.['T7_DominantFreq'] || 0;
-//   const alphaIntensity = data.features?.['T7_Alpha'] || 0; 
-
-//   // ─── Wellness Logic (Recalibrated for Z-Scores) ───────────────────────────
-//   const getWellnessSummary = () => {
-//     // 1. HIGH ENGAGEMENT / APPROACH (Left-Frontal Dominance)
-//     // Lowered to 0.02 to detect subtle positive shifts in normalized data
-//     if (asymmetry > 0.02) {
-//       return {
-//         title: "You are in the 'Zone'!",
-//         summary: "Your brain shows high approach motivation! You are feeling 'Engaged' and 'Proactive.' This is the perfect state for creative problem solving or focused learning.",
-//         icon: <Zap className="text-primary" size={32} />,
-//         borderClass: "border-primary"
-//       };
-//     } 
-    
-//     // 2. STRESS / WITHDRAWAL (Right-Frontal Dominance)
-//     // Threshold set to -0.02 to catch early signs of mental fatigue
-//     else if (asymmetry < -0.02) {
-//       return {
-//         title: "Time for a Mental Break",
-//         summary: "We notice a slight shift toward right-frontal dominance. This usually happens when the brain feels overwhelmed. A quick 2-minute breathing exercise could help reset your focus.",
-//         icon: <Moon className="text-info" size={32} />,
-//         borderClass: "border-info"
-//       };
-//     } 
-
-//     // 3. DEEP RELAXATION (High Alpha Power)
-//     // Since data is Z-scored, an intensity > 1.1 indicates alpha is the dominant rhythm
-//     else if (alphaIntensity > 1.1) {
-//         return {
-//           title: "Deeply Relaxed",
-//           summary: "Strong Alpha rhythms detected! Your mind is in a very calm, resting state—similar to light meditation. This is ideal for recovery and visualization.",
-//           icon: <Coffee className="text-secondary" size={32} />,
-//           borderClass: "border-secondary"
-//         };
-//     }
-
-//     // 4. BALANCED (Fallback)
-//     return {
-//       title: "Your Brain is Balanced",
-//       summary: "Your brain waves are in a steady, resting state. You aren't over-stressed, but you aren't over-exerted either. It's a great time for routine tasks or light reading.",
-//       icon: <Sun className="text-warning" size={32} />,
-//       borderClass: "border-warning"
-//     };
-//   };
-
-//   const wellness = getWellnessSummary();
-
-//   // ─── Dynamic Progress Math ────────────────────────────────────────────────
-//   // Mapping Focus Score (usually 8-14Hz) to a 0-100% scale for the gauge
-//   const mentalLoadPct = Math.min(100, Math.max(10, (focusScore - 7) * 15));
-
-//   return (
-//     <div className="row g-4 fade-in">
-//       {/* 3D Brain Visual */}
-//       <div className="col-lg-7 col-12">
-//         <SensorMap />
-//       </div>
-
-//       <div className="col-lg-5 col-12 d-flex flex-column gap-3">
-//         {/* Quick Stats Grid */}
-//         <div className="row g-3">
-//             <div className="col-6">
-//                 <div className="card border-0 shadow-sm rounded-4 p-3 bg-white text-center">
-//                     <Heart size={24} className={asymmetry > 0 ? "text-success mx-auto mb-2" : "text-danger mx-auto mb-2"} />
-//                     <small className="text-muted d-block small fw-bold">EMOTIONAL BIAS</small>
-//                     <span className="fw-bold">{asymmetry > 0.02 ? "Engaged" : asymmetry < -0.02 ? "Reflective" : "Neutral"}</span>
-//                 </div>
-//             </div>
-//             <div className="col-6">
-//                 <div className="card border-0 shadow-sm rounded-4 p-3 bg-white text-center">
-//                     <Zap size={24} className="text-warning mx-auto mb-2" />
-//                     <small className="text-muted d-block small fw-bold">MENTAL SPEED</small>
-//                     <span className="fw-bold">{focusScore.toFixed(1)} Hz</span>
-//                 </div>
-//             </div>
-//         </div>
-
-//         {/* DYNAMIC SUMMARY BOX */}
-//         <div className={`card border-0 shadow-sm rounded-4 p-4 bg-white border-start border-4 ${wellness.borderClass}`}>
-//           <div className="d-flex align-items-center gap-3 mb-3">
-//             <div className="p-2 bg-light rounded-3">
-//                 {wellness.icon}
-//             </div>
-//             <h5 className="fw-bold mb-0 text-dark">{wellness.title}</h5>
-//           </div>
-          
-//           <div className="p-3 rounded-4 bg-light border-0">
-//             <p className="text-dark mb-0 leading-relaxed" style={{ fontSize: '1rem', lineHeight: '1.6' }}>
-//                 <BookOpen size={18} className="me-2 text-primary mb-1" />
-//                 {wellness.summary}
-//             </p>
-//           </div>
-
-//           <div className="mt-3 d-flex align-items-center gap-2 text-muted small">
-//             <Info size={14} />
-//             <span>Analysis based on <strong>Frontal Alpha Asymmetry (FAA)</strong>.</span>
-//           </div>
-//         </div>
-
-//         {/* DYNAMIC PROGRESS GAUGE */}
-//         <div className="card border-0 shadow-sm rounded-4 p-4 bg-white">
-//           <div className="d-flex justify-content-between align-items-center mb-3">
-//             <h6 className="fw-bold text-muted text-uppercase small mb-0">Cognitive Load</h6>
-//             <span className="badge bg-light text-dark">{Math.round(mentalLoadPct)}%</span>
-//           </div>
-//           <div className="progress" style={{height: '12px', borderRadius: '10px', backgroundColor: '#f0f0f0'}}>
-//             <div 
-//               className={`progress-bar ${asymmetry < -0.02 ? 'bg-info' : 'bg-primary'}`} 
-//               style={{
-//                 width: `${mentalLoadPct}%`,
-//                 transition: 'width 1.5s cubic-bezier(0.4, 0, 0.2, 1)'
-//               }}
-//             ></div>
-//           </div>
-//           <div className="d-flex justify-content-between mt-2 small text-muted">
-//             <span>Relaxed (Alpha)</span>
-//             <span>Active (Beta)</span>
-//           </div>
-//         </div>
-//       </div>
-//     </div>
-//   );
-// };
-
-// export default PatientView;
-
-// import React from 'react';
-// import SensorMap from './SensorMap';
-// import { Zap, Heart, Info, BookOpen, Sun, Moon, Coffee } from 'lucide-react';
-
-// const PatientView = ({ data }) => {
-//   if (!data) return null;
-
-//   // Normalizing the inputs from our new backend structure
-//   const asymmetry = data.asymmetry_score || 0;
-//   const focusScore = data.features?.['T7_DominantFreq'] || 0;
-//   // Use Alpha Power instead of Std (since Std is now always 1.0 due to Z-score)
-//   const alphaIntensity = data.features?.['T7_Alpha'] || 0; 
-
-//   const getWellnessSummary = () => {
-//     // DEFAULT: Balanced State
-//     let title = "Your Brain is Balanced";
-//     let summary = "Right now, your brain waves are in a steady, resting state. You aren't over-stressed, but you aren't super excited either. It's a great time for routine tasks or light reading.";
-//     let icon = <Sun className="text-warning" size={32} />;
-
-//     // 1. APPROACH STATE (Focused/Happy)
-//     // Lowered threshold to 0.05 because Z-scores are subtle
-//     if (asymmetry > 0.05 && focusScore > 10) {
-//       title = "You are in the 'Zone'!";
-//       summary = "Your left brain is highly active! This means you are feeling 'Engaged' and 'Ready.' Your brain is perfectly primed for solving problems, learning something new, or having a deep conversation.";
-//       icon = <Zap className="text-primary" size={32} />;
-//     } 
-//     // 2. WITHDRAWAL STATE (Stress/Fatigue)
-//     else if (asymmetry < -0.05) {
-//       title = "Time for a Mental Break";
-//       summary = "We notice your right-frontal brain activity is taking the lead. This usually happens when we feel a bit overwhelmed or mentally fatigued. Try a 2-minute breathing exercise to reset.";
-//       icon = <Moon className="text-info" size={32} />;
-//     } 
-//     // 3. RELAXATION STATE (High Alpha)
-//     else if (alphaIntensity > 1.2) {
-//         title = "Deeply Relaxed";
-//         summary = "Strong Alpha rhythms detected! You are in a very calm state, similar to light meditation. This is the ideal state for creative visualization or recovery.";
-//         icon = <Coffee className="text-secondary" size={32} />;
-//     }
-//     return { title, summary, icon };
-//   };
-
-//   const wellness = getWellnessSummary();
-
-//   return (
-//     <div className="row g-4">
-//       {/* 3D Brain Visual */}
-//       <div className="col-lg-7 col-12">
-//         <SensorMap />
-//       </div>
-
-//       <div className="col-lg-5 col-12 d-flex flex-column gap-3">
-//         {/* Quick Stats Grid */}
-//         <div className="row g-3">
-//             <div className="col-6">
-//                 <div className="card border-0 shadow-sm rounded-4 p-3 bg-white text-center">
-//                     <Heart size={24} className={asymmetry > 0 ? "text-success mx-auto mb-2" : "text-danger mx-auto mb-2"} />
-//                     <small className="text-muted d-block">Emotional State</small>
-//                     <span className="fw-bold">{asymmetry > 0.05 ? "Engaged" : asymmetry < -0.05 ? "Stressed" : "Neutral"}</span>
-//                 </div>
-//             </div>
-//             <div className="col-6">
-//                 <div className="card border-0 shadow-sm rounded-4 p-3 bg-white text-center">
-//                     <Zap size={24} className="text-warning mx-auto mb-2" />
-//                     <small className="text-muted d-block">Mental Speed</small>
-//                     <span className="fw-bold">{focusScore.toFixed(1)} Hz</span>
-//                 </div>
-//             </div>
-//         </div>
-
-//         {/* STATIC SUMMARY BOX */}
-//         <div className="card border-0 shadow-sm rounded-4 p-4 bg-white border-start border-4 border-primary">
-//           <div className="d-flex align-items-center gap-3 mb-3">
-//             <div className="p-2 bg-light rounded-3">
-//                 {wellness.icon}
-//             </div>
-//             <h5 className="fw-bold mb-0 text-dark">{wellness.title}</h5>
-//           </div>
-          
-//           <div className="p-3 rounded-3 bg-light border-0">
-//             <p className="text-dark mb-0 leading-relaxed" style={{ fontSize: '1.05rem', lineHeight: '1.6' }}>
-//                 <BookOpen size={18} className="me-2 text-primary mb-1" />
-//                 {wellness.summary}
-//             </p>
-//           </div>
-
-//           <div className="mt-3 d-flex align-items-center gap-2 text-muted small">
-//             <Info size={14} />
-//             <span>Based on <strong>Frontal Alpha Asymmetry (FAA)</strong> processing.</span>
-//           </div>
-//         </div>
-
-//         {/* PROGRESS GAUGE */}
-//         <div className="card border-0 shadow-sm rounded-4 p-4 bg-white">
-//           <h6 className="fw-bold text-muted text-uppercase small mb-3">Mental Load Indicator</h6>
-//           <div className="progress" style={{height: '20px', borderRadius: '10px', backgroundColor: '#f0f0f0'}}>
-//             <div 
-//               className={`progress-bar ${asymmetry < -0.05 ? 'bg-danger' : 'bg-success'}`} 
-//               style={{
-//                 width: `${Math.min(100, Math.max(10, (focusScore * 4)))}%`,
-//                 transition: 'width 1s ease-in-out'
-//               }}
-//             ></div>
-//           </div>
-//           <div className="d-flex justify-content-between mt-2 small text-muted">
-//             <span>Low Engagement</span>
-//             <span>High Engagement</span>
-//           </div>
-//         </div>
-//       </div>
-//     </div>
-//   );
-// };
-
-// export default PatientView;
-
-// import React from 'react';
-// import SensorMap from './SensorMap';
-// import { Zap, Heart, Info, BookOpen, Sun, Moon, Coffee } from 'lucide-react';
-
-// const PatientView = ({ data }) => {
-//   if (!data) return null;
-
-//   const asymmetry = data.asymmetry_score || 0;
-//   const focusScore = data.features['T7_DominantFreq'] || 0;
-//   const stressLevel = data.features['F8_Std'] || 0;
-
-//   const getWellnessSummary = () => {
-//     let title = "Your Brain is Balanced";
-//     let summary = "Right now, your brain waves are in a steady, resting state. You aren't over-stressed, but you aren't super excited either. It's a great time for routine tasks or light reading.";
-//     let icon = <Sun className="text-warning" size={32} />;
-
-//     if (asymmetry > 0.1 && focusScore > 10) {
-//       title = "You are in the 'Zone'!";
-//       summary = "Your left brain is highly active! This means you are feeling 'Approachable' and 'Ready.' Your brain is perfectly primed for solving problems, learning something new, or having a deep conversation.";
-//       icon = <Zap className="text-primary" size={32} />;
-//     } else if (asymmetry < -0.1) {
-//       title = "Time for a Mental Break";
-//       summary = "We notice your right brain is taking the lead. This usually happens when we feel a bit overwhelmed or withdrawn. Try closing your eyes for 2 minutes and taking five deep breaths to reset.";
-//       icon = <Moon className="text-info" size={32} />;
-//     } else if (stressLevel > 20) {
-//         title = "High Mental Chatter";
-//         summary = "There is a lot of 'noise' in your frontal signals. This might be because you're blinking a lot or moving your jaw. Try to relax your face and sit still to see your true brain rhythm.";
-//         icon = <Coffee className="text-secondary" size={32} />;
-//     }
-//     return { title, summary, icon };
-//   };
-
-//   const wellness = getWellnessSummary();
-
-//   return (
-//     <div className="row g-4">
-      
-//       {/* 3D Brain Visual */}
-//       <div className="col-lg-7 col-12">
-//         <SensorMap />
-//       </div>
-
-//       <div className="col-lg-5 col-12 d-flex flex-column gap-3">
-//         {/* Quick Stats Grid */}
-//         <div className="row g-3">
-//             <div className="col-6">
-//                 <div className="card border-0 shadow-sm rounded-4 p-3 bg-white text-center">
-//                     <Heart size={24} className="text-danger mx-auto mb-2" />
-//                     <small className="text-muted d-block">Emotional State</small>
-//                     <span className="fw-bold">{asymmetry > 0 ? "Positive" : "Reflective"}</span>
-//                 </div>
-//             </div>
-//             <div className="col-6">
-//                 <div className="card border-0 shadow-sm rounded-4 p-3 bg-white text-center">
-//                     <Zap size={24} className="text-warning mx-auto mb-2" />
-//                     <small className="text-muted d-block">Mental Speed</small>
-//                     <span className="fw-bold">{focusScore.toFixed(1)} Hz</span>
-//                 </div>
-//             </div>
-//         </div>
-
-//         {/* STATIC SUMMARY BOX */}
-//         <div className="card border-0 shadow-sm rounded-4 p-4 bg-white border-start border-4 border-primary">
-//           <div className="d-flex align-items-center gap-3 mb-3">
-//             <div className="p-2 bg-light rounded-3">
-//                 {wellness.icon}
-//             </div>
-//             <h5 className="fw-bold mb-0 text-dark">{wellness.title}</h5>
-//           </div>
-          
-//           <div className="p-3 rounded-3 bg-light border-0">
-//             <p className="text-dark mb-0 leading-relaxed" style={{ fontSize: '1.05rem', lineHeight: '1.6' }}>
-//                 <BookOpen size={18} className="me-2 text-primary mb-1" />
-//                 {wellness.summary}
-//             </p>
-//           </div>
-
-//           <div className="mt-3 d-flex align-items-center gap-2 text-muted small">
-//             <Info size={14} />
-//             <span>This summary is based on your <strong>Alpha-to-Beta</strong> wave ratio.</span>
-//           </div>
-//         </div>
-
-//         {/* STATIC PROGRESS GAUGE */}
-//         <div className="card border-0 shadow-sm rounded-4 p-4 bg-white">
-//           <h6 className="fw-bold text-muted text-uppercase small mb-3">Your Relaxation Level</h6>
-//           <div className="progress" style={{height: '20px', borderRadius: '10px'}}>
-//             <div 
-//               className="progress-bar bg-success" 
-//               style={{width: `${Math.max(20, 100 - (focusScore * 5))}%`}}
-//             ></div>
-//           </div>
-//           <div className="d-flex justify-content-between mt-2 small text-muted">
-//             <span>Active</span>
-//             <span>Relaxed</span>
-//           </div>
-//         </div>
-//       </div>
-//     </div>
-//   );
-// };
-
-// export default PatientView;

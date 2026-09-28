@@ -1,76 +1,37 @@
 // File: src/components/eegData.js
-// using namespace std;
 
-export const SENSOR_DATA = [
-  // T7 (Left Temporal) - Far left side
-  { name: "T7", position: [-27.0, 24.0, 0.0], color: "#5f34f9" },   
-  
-  // F8 (Right Frontal) - Front right forehead
-  { name: "F8", position: [21.0, 20.0, 13.0], color: "#168021" }, 
-  
-  // F3 (Left Frontal) - Front left forehead (Added for EDF compatibility)
-  { name: "F3", position: [-21.0, 20.0, 13.0], color: "#16dbfe" },
+export const CHANNEL_COLORS = {
+  T7: "#3b82f6",
+  F8: "#10b981",
+  F3: "#06b6d4",
+  F4: "#8b5cf6",
+  Cz: "#ef4444",
+  P4: "#f59e0b",
+};
 
-  // F4 (Right Frontal) - Front right forehead (Added for EDF compatibility)
-  { name: "F4", position: [21.0, 20.0, 13.0], color: "#3b82f6" },
-  
-  // Cz (Vertex) - The very top of the head
-  { name: "Cz", position: [0.0, 56.5, 0.0], color: "#f93535" },    
-  
-  // P4 (Right Parietal) - Back right side
-  { name: "P4", position: [16.0, 44.0, -20.0], color: "#9c7904" } 
+const DYNAMIC_CHANNEL_PALETTE = [
+  "#2563eb", "#059669", "#7c3aed", "#ea580c",
+  "#0891b2", "#db2777", "#65a30d", "#4f46e5",
+  "#dc2626", "#0d9488", "#9333ea", "#ca8a04",
 ];
 
-// // File: src/components/eegData.js
+// Known headset channels keep the submitted colours. Clinical derivations get
+// a stable colour based on their name, so C4-A1 is identical in every view.
+export const getChannelColor = (channel = "") => {
+  if (CHANNEL_COLORS[channel]) return CHANNEL_COLORS[channel];
 
-// export const SENSOR_DATA = [
-//   // T7 (Left Temporal) - Far left side
-//   { name: "T7", position: [-27.0, 24.0, 0.0], color: "#2a00c2" },   
-  
-//   // F8 (Right Frontal) - Front right forehead
-//   { name: "F8", position: [21.0, 20.0, 13.0], color: "#00670a" }, 
-  
-//   // Cz (Vertex) - The very top of the head
-//   { name: "Cz", position: [0.0, 56.5, 0.0], color: "#8f0505" },    
-  
-//   // P4 (Right Parietal) - Back right side
-//   { name: "P4", position: [16.0, 44.0, -20.0], color: "#ff0000" } 
-// ];
+  const hash = Array.from(channel).reduce(
+    (total, character) => ((total * 31) + character.charCodeAt(0)) >>> 0,
+    0
+  );
+  return DYNAMIC_CHANNEL_PALETTE[hash % DYNAMIC_CHANNEL_PALETTE.length];
+};
 
-// export const SENSOR_DATA = [
-//   // T7: Pushed way out to the far Left edge
-//   { name: "T7", position: [-27.0, -2.0, 0.0], color: "#3b82f6" },   
-  
-//   // F8: Pushed to the Right and Front forehead
-//   { name: "F8", position: [21.0, -5.0, 26.0], color: "#10b981" }, 
-  
-//   // Cz: Pushed all the way to the Top of the skull
-//   { name: "Cz", position: [0.0, 28.5, 0.0], color: "#ef4444" },    
-  
-//   // P4: Pushed to the Right, Top, and Back
-//   { name: "P4", position: [16.0, 16.0, -20.0], color: "#ef4444" } 
-// ];
-
-// export const SENSOR_DATA = [
-//   // T7 (Left Temporal) - Far left side
-//   { name: "T7", position: [-3.8, 0.0, 0.0], color: "#3b82f6" },   
-  
-//   // F8 (Right Frontal) - Front right forehead
-//   { name: "F8", position: [2.8, -0.5, 2.2], color: "#10b981" }, 
-  
-//   // Cz (Vertex) - Top center of the head
-//   { name: "Cz", position: [0.0, 2.4, 0.0], color: "#ef4444" },    
-  
-//   // P4 (Right Parietal) - Back right side
-//   { name: "P4", position: [2.0, 1.0, -2.0], color: "#ef4444" } 
-// ];
-
-// export const SENSOR_DATA = [
-//   // THE ACTIVE CHANNELS (Clean)
-//   { name: "T7", position: [-3.5, 0, 0], color: "#3b82f6" },   // Left Temporal (Blue)
-//   { name: "F8", position: [2.5, 1.0, 2.5], color: "#10b981" }, // Right Frontal (Green)
-
-//   // THE REJECTED CHANNELS (High Impedance / Hair Noise)
-//   { name: "Cz", position: [0, 3.5, 0], color: "#ef4444" },    // Top Center (Red)
-//   { name: "P4", position: [1.5, 1.5, -2.5], color: "#ef4444" } // Back Right (Red)
-// ];
+export const SENSOR_DATA = [
+  { name: "T7", position: [-27.0, 24.0, 0.0], color: CHANNEL_COLORS.T7 },
+  { name: "F8", position: [21.0, 20.0, 13.0], color: CHANNEL_COLORS.F8 },
+  { name: "F3", position: [-21.0, 20.0, 13.0], color: CHANNEL_COLORS.F3 },
+  { name: "F4", position: [15.0, 23.0, 16.0], color: CHANNEL_COLORS.F4 },
+  { name: "Cz", position: [0.0, 56.5, 0.0], color: CHANNEL_COLORS.Cz },
+  { name: "P4", position: [16.0, 44.0, -20.0], color: CHANNEL_COLORS.P4 },
+];

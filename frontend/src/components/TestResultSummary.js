@@ -4,30 +4,35 @@ import { ClipboardList, CheckCircle, AlertTriangle, Activity } from 'lucide-reac
 const TestResultSummary = ({ data }) => {
   if (!data) return null;
 
-  const f8_std = data.features['F8_Std'] || 0;
   const asymmetry = data.asymmetry_score || 0;
   const dom_freq = data.features['T7_DominantFreq'] || 0;
+  const artifacts = data.artifacts || {};
+  const isStandardFAA = Boolean(data.faa_details?.standard_frontal_pair);
+  const hasArtifact = Boolean(artifacts.ocular_detected || artifacts.muscle_detected);
 
-  let blinkStatus = "Stable Gaze";
-  if (f8_std > 20) blinkStatus = "High Ocular Activity";
-  else if (f8_std > 10) blinkStatus = "Moderate Blinking";
+  const blinkStatus = artifacts.ocular_detected
+    ? "Ocular Artifact Flag"
+    : "No Major Ocular Artifact";
 
-  let moodStatus = "Neutral / Balanced";
-  if (asymmetry > 0.1) moodStatus = "Positive Approach (Left-Brain)";
-  else if (asymmetry < -0.1) moodStatus = "Withdrawal (Right-Brain)";
+  let moodStatus = "FAA Near Balanced";
+  if (!isStandardFAA) moodStatus = "Experimental Alpha Comparison";
+  else if (asymmetry > 0.1) moodStatus = "Positive FAA Direction";
+  else if (asymmetry < -0.1) moodStatus = "Negative FAA Direction";
 
-  let alertStatus = "Drowsy / Deep Relaxation";
-  if (dom_freq > 12) alertStatus = "Active / Alert (Beta)";
-  else if (dom_freq >= 8) alertStatus = "Relaxed (Alpha)";
+  let alertStatus = "Delta-range Dominant";
+  if (dom_freq >= 30) alertStatus = "Gamma-range Dominant";
+  else if (dom_freq >= 13) alertStatus = "Beta-range Dominant";
+  else if (dom_freq >= 8) alertStatus = "Alpha-range Dominant";
+  else if (dom_freq >= 4) alertStatus = "Theta-range Dominant";
 
   const getSummaryText = () => {
-    if (f8_std > 20 && asymmetry < 0) {
-      return "Subject indicates signs of restlessness or fatigue, characterized by frequent ocular artifacts (blinking) and right-hemispheric dominance. Suggest a short break.";
+    if (hasArtifact) {
+      return "Threshold-level signal artifacts were detected. Review the affected channels before interpreting spectral or asymmetry features.";
     }
-    if (asymmetry > 0 && dom_freq >= 8) {
-      return "Subject is in a highly functional state. Alpha asymmetry indicates positive engagement (Approach behavior), supported by a stable Alpha rhythm suggesting relaxed focus.";
+    if (!isStandardFAA) {
+      return `No threshold-level artifacts were detected. The T7 dominant rhythm is ${dom_freq.toFixed(1)} Hz; the T7/F8 alpha comparison is experimental and is not standard frontal FAA.`;
     }
-    return "Subject shows a baseline resting state. Neural rhythms are within normal ranges, though occasional ocular artifacts were detected in the frontal lobe.";
+    return `No threshold-level artifacts were detected. The T7 dominant rhythm is ${dom_freq.toFixed(1)} Hz and the standard frontal FAA pair was available.`;
   };
 
   return (
@@ -38,7 +43,7 @@ const TestResultSummary = ({ data }) => {
         </div>
         <div>
           <h3>Clinical Interpretation</h3>
-          <p className="summary-date">Automated Report • {new Date().toLocaleDateString()}</p>
+          <p className="summary-date">Research Prototype • {new Date().toLocaleDateString()}</p>
         </div>
       </div>
 
@@ -53,7 +58,7 @@ const TestResultSummary = ({ data }) => {
 
       <div className="recommendation-box">
         <AlertTriangle size={16} color="#d97706" />
-        <span><strong>Rx:</strong> {f8_std > 15 ? "Reduce movement artifacts. Ensure subject is seated." : "Continue monitoring trends."}</span>
+        <span><strong>Note:</strong> {hasArtifact ? "Repeat or review the recording before drawing conclusions." : "No major threshold-level artifact was flagged."}</span>
       </div>
     </div>
   );

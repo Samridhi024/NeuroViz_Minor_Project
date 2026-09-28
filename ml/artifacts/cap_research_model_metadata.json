@@ -1,0 +1,148 @@
+{
+  "model_version": "1.0.0-research",
+  "created_at_utc": "2026-09-06T22:36:53.530653+00:00",
+  "model_type": "StandardScaler + LogisticRegression",
+  "model_channel": "C4-A1",
+  "target_column": "cap_a_event_present",
+  "target_definition": "1 when an expert-annotated MCAP-A1/A2/A3 event overlaps the 30-second NREM epoch; otherwise 0.",
+  "output_name": "CAP-like activity score",
+  "decision_threshold": 0.5,
+  "training_rows": 960,
+  "training_subject_count": 6,
+  "training_subjects": [
+    "ins1",
+    "ins2",
+    "ins3",
+    "n1",
+    "n2",
+    "n3"
+  ],
+  "selected_stages": [
+    "N2",
+    "N3"
+  ],
+  "class_and_stage_counts": [
+    {
+      "sleep_stage": "N2",
+      "cap_a_event_present": 0,
+      "rows": 240
+    },
+    {
+      "sleep_stage": "N2",
+      "cap_a_event_present": 1,
+      "rows": 240
+    },
+    {
+      "sleep_stage": "N3",
+      "cap_a_event_present": 0,
+      "rows": 240
+    },
+    {
+      "sleep_stage": "N3",
+      "cap_a_event_present": 1,
+      "rows": 240
+    }
+  ],
+  "feature_count": 40,
+  "feature_columns": [
+    "mean_uv",
+    "std_uv",
+    "variance_uv2",
+    "rms_uv",
+    "minimum_uv",
+    "maximum_uv",
+    "peak_to_peak_uv",
+    "skewness",
+    "kurtosis",
+    "line_length_uv",
+    "mean_absolute_difference_uv",
+    "zero_crossing_rate",
+    "hjorth_activity",
+    "hjorth_mobility",
+    "hjorth_complexity",
+    "total_power_uv2",
+    "log_total_power",
+    "delta_power_uv2",
+    "log_delta_power",
+    "relative_delta_power",
+    "theta_power_uv2",
+    "log_theta_power",
+    "relative_theta_power",
+    "alpha_power_uv2",
+    "log_alpha_power",
+    "relative_alpha_power",
+    "sigma_power_uv2",
+    "log_sigma_power",
+    "relative_sigma_power",
+    "beta_power_uv2",
+    "log_beta_power",
+    "relative_beta_power",
+    "dominant_frequency_hz",
+    "median_frequency_hz",
+    "spectral_edge_95_hz",
+    "spectral_entropy",
+    "theta_alpha_ratio",
+    "beta_alpha_ratio",
+    "delta_beta_ratio",
+    "sigma_total_ratio"
+  ],
+  "dataset_sha256": "c695650b0001b96907dec498c401ee06365938a23f306a855c55f756170898bc",
+  "schema_sha256": "6450c8046db6fe3ddf59c2ab3ab6214309bc40930e32d7d067fc9a1d6a048be4",
+  "pilot_validation": {
+    "validation_method": "LeaveOneGroupOut grouped by subject_id",
+    "pooled_held_out_epoch_metrics": {
+      "accuracy": 0.6322916666666667,
+      "balanced_accuracy": 0.6322916666666667,
+      "precision": 0.6365591397849463,
+      "recall": 0.6166666666666667,
+      "f1_score": 0.6264550264550265,
+      "confusion_matrix": [
+        [
+          311,
+          169
+        ],
+        [
+          184,
+          296
+        ]
+      ],
+      "roc_auc": 0.6528689236111112
+    },
+    "macro_subject_metrics": {
+      "accuracy": 0.6322916666666666,
+      "balanced_accuracy": 0.6322916666666666,
+      "precision": 0.7096863383648674,
+      "recall": 0.6166666666666666,
+      "f1_score": 0.5865523503053105,
+      "roc_auc": 0.6996614583333334
+    }
+  },
+  "training_fit_sanity_metrics": {
+    "accuracy": 0.7010416666666667,
+    "precision": 0.7168539325842697,
+    "recall": 0.6645833333333333,
+    "f1_score": 0.6897297297297297,
+    "roc_auc": 0.7695789930555554,
+    "confusion_matrix": [
+      [
+        354,
+        126
+      ],
+      [
+        161,
+        319
+      ]
+    ],
+    "warning": "Calculated on the same rows used to fit the model; do not report these as validation metrics."
+  },
+  "probability_warning": "The model was trained on an artificially balanced dataset. predict_proba output is a model score and is not a calibrated clinical probability or official CAP rate.",
+  "clinical_scope": "Research prototype for identifying 30-second N2/N3 epochs with CAP A-like EEG patterns. It is not a medical diagnosis, official CAP scoring system, or insomnia-risk estimator.",
+  "inference_requirement": "C4-A1 EDF EEG plus a paired sleep-stage annotation TXT file. CAP annotations must not be used as inference inputs.",
+  "software": {
+    "python": "3.12.4",
+    "numpy": "1.26.4",
+    "pandas": "3.0.1",
+    "scikit_learn": "1.8.0",
+    "joblib": "1.5.3"
+  }
+}

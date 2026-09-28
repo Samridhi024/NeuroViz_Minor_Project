@@ -5,12 +5,14 @@ import { Bell, Activity, FileText, User, ShieldCheck } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import TestResults from './components/TestResults';
+import SleepAnalysis from './components/SleepAnalysis';
 import Settings from './components/Settings'; // Import the new component
 import './App.css';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [data, setData] = useState(null);
+  const [sleepData, setSleepData] = useState(null);
   const [showCleaned, setShowCleaned] = useState(false);
   const [userMode, setUserMode] = useState('clinician'); 
 
@@ -25,12 +27,35 @@ function App() {
     setData(newData);
     setActiveTab('dashboard');
     setShowCleaned(false);
+    setUserMode('clinician');
   };
 
   const handleSettingsUpdate = (newConfig) => {
     setSystemConfig(newConfig);
     // You can trigger backend re-fetch or theme changes here
   };
+
+  const handleSleepAnalysisComplete = (newSleepData) => {
+    setSleepData(newSleepData);
+    setActiveTab('sleep');
+  };
+
+  const headerTitle = {
+    dashboard: userMode === 'clinician' ? 'Clinician Portal' : 'Patient Wellness',
+    results: 'Test Results',
+    sleep: 'Clinical Sleep Analysis',
+    settings: 'System Settings'
+  }[activeTab] || 'NeuroViz';
+
+  const headerSubtitle = activeTab === 'settings'
+    ? 'Configure processing parameters'
+    : activeTab === 'sleep'
+      ? sleepData
+        ? 'CAP A-like research analysis ready'
+        : 'Upload a paired clinical EDF and sleep-stage TXT file'
+      : data
+        ? 'Analysis ready'
+        : 'Waiting for file upload';
 
   return (
     <div className={`container-fluid min-vh-100 bg-light ${systemConfig.theme}`}>
@@ -52,19 +77,15 @@ function App() {
           <header className="bg-white border-bottom py-3 px-4 d-flex justify-content-between align-items-center sticky-top shadow-sm">
             <div>
               <h5 className="fw-bold mb-0 text-dark">
-                {activeTab === 'settings' ? "System Settings" : 
-                 userMode === 'clinician' ? "Clinician Portal" : "Patient Wellness"} 👋
+                {headerTitle} 👋
               </h5>
-              <small className="text-muted">
-                {activeTab === 'settings' ? "Configure processing parameters" :
-                 data ? "Analysis ready" : "Waiting for file upload"}
-              </small>
+              <small className="text-muted">{headerSubtitle}</small>
             </div>
             
             <div className="d-flex align-items-center gap-4">
               
               {/* DUAL MODE TOGGLE (Only in Dashboard) */}
-              {data && activeTab === 'dashboard' && (
+              {data && activeTab === 'dashboard' && data?.faa_details?.mode !== 'unavailable' && (
                 <div className="btn-group bg-light p-1 rounded-3" role="group">
                   <button 
                     onClick={() => setUserMode('clinician')}
@@ -121,6 +142,13 @@ function App() {
                 />
               )}
               {activeTab === 'results' && <TestResults data={data} />}
+
+              {activeTab === 'sleep' && (
+                <SleepAnalysis
+                  data={sleepData}
+                  onAnalysisComplete={handleSleepAnalysisComplete}
+                />
+              )}
               
               {/* SETTINGS VIEW */}
               {activeTab === 'settings' && (

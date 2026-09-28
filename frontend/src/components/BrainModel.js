@@ -15,14 +15,10 @@ export default function BrainModel({ sensors = [] }) {
       />
 
       {/* 2. THE SENSORS (Locked in the exact same group) */}
-      {sensors.map((sensor, index) => (
-        <mesh key={index} position={sensor.position}>
-          <sphereGeometry args={[1.5, 32, 32]} />
-          <meshStandardMaterial 
-            color={sensor.color} 
-            emissive={sensor.color}
-            emissiveIntensity={2} 
-          />
+      {sensors.map((sensor) => (
+        <mesh key={sensor.name} position={sensor.position}>
+          <sphereGeometry args={[1.8, 32, 32]} />
+          <meshBasicMaterial color={sensor.color} toneMapped={false} />
         </mesh>
       ))}
     </group>

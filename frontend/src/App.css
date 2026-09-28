@@ -168,3 +168,152 @@ body {
   border-radius: 12px;
   border: 1px solid #ffedd5;
 }
+
+/* Clinical Sleep Analysis */
+.sleep-icon-box {
+  width: 58px;
+  height: 58px;
+  flex: 0 0 58px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+  color: #6366f1;
+  background: #eef2ff;
+}
+
+.sleep-file-card {
+  min-height: 145px;
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1.25rem;
+  border: 2px dashed #cbd5e1;
+  border-radius: 16px;
+  background: #f8fafc;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.sleep-file-card:hover,
+.sleep-file-card.selected {
+  border-color: #3b82f6;
+  background: #eff6ff;
+}
+
+.sleep-upload-progress {
+  height: 8px;
+  border-radius: 999px;
+}
+
+.sleep-metric-card {
+  height: 100%;
+  min-height: 118px;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.25rem;
+  border-radius: 16px;
+  background: white;
+  box-shadow: 0 .125rem .25rem rgba(0, 0, 0, .075);
+  border-bottom: 4px solid currentColor;
+}
+
+.sleep-metric-card svg {
+  flex: 0 0 auto;
+}
+
+.sleep-metric-card small {
+  display: block;
+  color: #64748b;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 0.25rem;
+}
+
+.sleep-metric-card h3 {
+  margin: 0;
+  color: #1e293b;
+  font-weight: 700;
+}
+
+.sleep-metric-blue { color: #3b82f6; }
+.sleep-metric-purple { color: #6366f1; }
+.sleep-metric-green { color: #10b981; }
+.sleep-metric-orange { color: #f59e0b; }
+
+.sleep-chart-container {
+  width: 100%;
+  height: 330px;
+  min-width: 0;
+}
+
+.sleep-chart-scroll {
+  width: 100%;
+  height: 350px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border: 1px solid #eef2f7;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.sleep-chart-scroll::-webkit-scrollbar {
+  height: 9px;
+}
+
+.sleep-chart-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+
+.sleep-plain-summary {
+  border-left: 5px solid #3b82f6 !important;
+  background: linear-gradient(135deg, #eff6ff 0%, #ffffff 70%);
+}
+
+.sleep-simple-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
+  border: 1px solid #dbeafe;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.sleep-simple-item small {
+  color: #2563eb;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.sleep-simple-item strong {
+  color: #1e293b;
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+.sleep-detail-list dt,
+.sleep-detail-list dd {
+  padding-top: 0.55rem;
+  padding-bottom: 0.55rem;
+  margin-bottom: 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.sleep-detail-list dt {
+  color: #64748b;
+  font-weight: 600;
+}
+
+.sleep-detail-list dd {
+  color: #1e293b;
+  font-weight: 700;
+}
+
+@media (max-width: 991.98px) {
+  .sleep-chart-container {
+    height: 290px;
+  }
+}

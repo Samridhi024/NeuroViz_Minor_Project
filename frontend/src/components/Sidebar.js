@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, FileText, Settings, Brain, LogOut } from 'lucide-react';
+import { LayoutDashboard, FileText, Settings, Brain, LogOut, MoonStar } from 'lucide-react';
 
 /* NeuroViz Sidebar Component
   Updated to support the Settings View and Tab switching.
@@ -44,6 +44,17 @@ const Sidebar = ({ activeTab, setActiveTab, disableResults }) => {
           >
             <FileText size={20}/> 
             <span className="fw-medium">Test Results</span>
+          </button>
+        </li>
+
+        {/* CLINICAL SLEEP ANALYSIS TAB */}
+        <li className="nav-item">
+          <button
+            className={`nav-link d-flex align-items-center gap-3 w-100 ${activeTab === 'sleep' ? 'active shadow-sm' : 'text-secondary'}`}
+            onClick={() => setActiveTab('sleep')}
+          >
+            <MoonStar size={20}/>
+            <span className="fw-medium">Sleep Analysis</span>
           </button>
         </li>
 
